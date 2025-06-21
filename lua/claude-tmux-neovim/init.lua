@@ -186,24 +186,40 @@ local function send_to_claude_code(instance, context)
     return false
   end
   
-  -- Escape context for tmux
-  local escaped_context = context:gsub([[\]], [[\\]]):gsub('"', '\\"')
+  -- Escape context for tmux - simple approach using temp file
+  local temp_file = os.tmpname()
+  local file = io.open(temp_file, "w")
+  if not file then
+    vim.notify("Could not create temporary file for context", vim.log.levels.ERROR)
+    return false
+  end
   
-  -- Load the context into a tmux buffer
-  local load_cmd = string.format('tmux load-buffer -b claude_context %s', vim.fn.shellescape(escaped_context))
-  vim.fn.system(load_cmd)
+  file:write(context)
+  file:close()
+  
+  -- Use temp file directly for tmux buffer loading
+  
+  -- Load the context into a tmux buffer using the temp file
+  local load_cmd = string.format('tmux load-buffer -b claude_context %s', temp_file)
+  vim.notify("Executing tmux command: " .. load_cmd, vim.log.levels.INFO)
+  local result = vim.fn.system(load_cmd)
   
   if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to load context into tmux buffer", vim.log.levels.ERROR)
+    vim.notify("Failed to load context into tmux buffer: " .. result, vim.log.levels.ERROR)
+    os.remove(temp_file)
     return false
   end
   
   -- Paste the buffer into the target pane
   local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s', instance.pane_id)
-  vim.fn.system(paste_cmd)
+  vim.notify("Executing paste command: " .. paste_cmd, vim.log.levels.INFO)
+  local paste_result = vim.fn.system(paste_cmd)
+  
+  -- Clean up temp file
+  os.remove(temp_file)
   
   if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to paste context into Claude Code pane", vim.log.levels.ERROR)
+    vim.notify("Failed to paste context into Claude Code pane: " .. paste_result, vim.log.levels.ERROR)
     return false
   end
   
