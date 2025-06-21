@@ -11,6 +11,7 @@ local config = require('claude-tmux-neovim.lib.config')
 local util = require('claude-tmux-neovim.lib.util')
 local tmux = require('claude-tmux-neovim.lib.tmux')
 local context = require('claude-tmux-neovim.lib.context')
+local debug = require('claude-tmux-neovim.lib.debug')
 
 -- Define module
 local M = {}
@@ -49,6 +50,21 @@ end
 function M.toggle_debug()
   vim.g.claude_tmux_neovim_debug = not vim.g.claude_tmux_neovim_debug
   vim.notify("Claude Code debug mode: " .. (vim.g.claude_tmux_neovim_debug and "ON" or "OFF"), vim.log.levels.INFO)
+  
+  if vim.g.claude_tmux_neovim_debug then
+    debug.init() -- Initialize debug log file
+    vim.notify("Debug log file created at: " .. vim.fn.stdpath('cache') .. '/claude-tmux-neovim-debug.log', vim.log.levels.INFO)
+  end
+end
+
+--- Show debug log in a split window
+function M.show_debug_log()
+  debug.show_log()
+end
+
+--- Clear debug log file
+function M.clear_debug_log()
+  debug.clear_log()
 end
 
 --- Main function to send context
@@ -80,6 +96,11 @@ function M.setup(user_config)
   -- Set global debug flag based on config
   vim.g.claude_tmux_neovim_debug = config.get().debug
   
+  -- Initialize debug log if debug mode is enabled
+  if vim.g.claude_tmux_neovim_debug then
+    debug.init()
+  end
+  
   -- Create wrapper function to silently send context
   local function silent_send_context(opts)
     -- Use pcall to suppress errors
@@ -101,6 +122,8 @@ function M.setup(user_config)
   vim.api.nvim_create_user_command("ClaudeCodeReset", M.reset_instances, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeResetGit", M.reset_git_instance, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeDebug", M.toggle_debug, { bang = true })
+  vim.api.nvim_create_user_command("ClaudeCodeShowLog", M.show_debug_log, { bang = true })
+  vim.api.nvim_create_user_command("ClaudeCodeClearLog", M.clear_debug_log, { bang = true })
   
   -- Set up keymapping using a Lua function callback for complete silence
   if config.get().keymap and config.get().keymap ~= "" then

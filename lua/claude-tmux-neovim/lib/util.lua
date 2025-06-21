@@ -69,15 +69,6 @@ function M.get_selection_from_range(start_line, end_line)
   return table.concat(lines, '\n')
 end
 
---- Debug logging function - only logs when debug is enabled
----@param msg string Message to log
----@param level string|nil Log level (default: INFO)
-function M.debug_log(msg, level)
-  -- Only log if debug is enabled
-  if vim.g.claude_tmux_neovim_debug then
-    level = level or vim.log.levels.INFO
-    vim.notify("[claude-tmux-neovim] " .. msg, level)
-  end
-end
+-- Debug function removed - now using the dedicated debug module
 
 return M

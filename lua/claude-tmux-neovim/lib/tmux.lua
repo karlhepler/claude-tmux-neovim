@@ -5,6 +5,7 @@
 local M = {}
 local config = require('claude-tmux-neovim.lib.config')
 local util = require('claude-tmux-neovim.lib.util')
+local debug = require('claude-tmux-neovim.lib.debug')
 
 --- Find all Claude Code instances in tmux
 ---@param git_root string The git repository root path
@@ -14,51 +15,77 @@ function M.get_claude_code_instances(git_root)
     return {}
   end
 
-  -- First, get all panes with their info
-  local cmd = string.format(
-    [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command}']]
-  )
+  debug.log("Starting search for Claude Code instances in git root: " .. git_root)
   
-  util.debug_log("Looking for Claude Code instances in git root: " .. git_root)
+  -- Step 1: Get all tmux panes
+  local list_panes_cmd = [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command} #{pane_current_path}']]
+  debug.log("Running command: " .. list_panes_cmd)
   
-  local result = vim.fn.system(cmd)
+  local result = vim.fn.system(list_panes_cmd)
   if vim.v.shell_error ~= 0 or result == "" then
-    util.debug_log("Failed to list tmux panes", vim.log.levels.WARN)
+    debug.log("Failed to list tmux panes or no panes found", vim.log.levels.WARN)
     return {}
   end
   
   local instances = {}
   local claude_code_cmd = config.get().claude_code_cmd
+  debug.log("Claude Code command to match: '" .. claude_code_cmd .. "'")
   
-  util.debug_log("Looking for command matching: " .. claude_code_cmd)
+  -- Get current tmux session for priority sorting
+  local current_session_cmd = [[tmux display-message -p '#{session_name}']]
+  local current_session = vim.fn.system(current_session_cmd):gsub("%s+$", "")
+  debug.log("Current tmux session: " .. current_session)
   
-  -- Process all panes
+  -- Step 2: Process all panes
   for line in result:gmatch("[^\r\n]+") do
-    local pane_id, session, window_name, window_idx, pane_idx, command = 
-      line:match("(%%[0-9]+) ([^ ]+) ([^ ]+) ([0-9]+) ([0-9]+) ([^ ]+)")
+    debug.log("Processing pane line: " .. line)
     
-    -- Log all matching commands for debugging
-    if command then
-      util.debug_log("Found pane with command: " .. command)
+    local pane_id, session, window_name, window_idx, pane_idx, command, pane_path = 
+      line:match("(%%[0-9]+) ([^ ]+) ([^ ]+) ([0-9]+) ([0-9]+) ([^ ]+) (.*)")
+    
+    if not pane_id or not command or not pane_path then
+      debug.log("Failed to parse pane information from line", vim.log.levels.WARN)
+      goto continue
     end
     
-    -- Only consider panes that appear to be running Claude Code
-    if pane_id and command and command:match(claude_code_cmd) then
-      util.debug_log("Found potential Claude Code pane: " .. pane_id)
+    debug.log("Pane " .. pane_id .. " command: '" .. command .. "'")
+    debug.log("Pane " .. pane_id .. " path: '" .. pane_path .. "'")
+    
+    -- Step 3: Check if this is potentially a Claude Code pane
+    local is_claude = false
+    
+    -- Method 1: Check the command name directly (most reliable)
+    if command == claude_code_cmd then
+      debug.log("Found exact command match: '" .. command .. "' == '" .. claude_code_cmd .. "'")
+      is_claude = true
+    -- Method 2: Check if the command path ends with the claude command name
+    elseif command:match("/" .. claude_code_cmd .. "$") then
+      debug.log("Found path-based command match: '" .. command .. "' ends with '/" .. claude_code_cmd .. "'")
+      is_claude = true
+    -- Method 3: For shell wrappers - check if it's a node.js process running claude code
+    elseif command == "node" then
+      -- Get the command line for this pane to check if it's running claude
+      local cmd_line_cmd = string.format([[tmux display-message -p -t %s '#{pane_current_command}']], pane_id)
+      local cmd_line = vim.fn.system(cmd_line_cmd):gsub("%s+$", "")
+      debug.log("Node process found, command line: " .. cmd_line)
       
-      -- Check if this pane's working directory is in the git repo
-      local check_cwd_cmd = string.format(
-        [[tmux display-message -p -t %s '#{pane_current_path}']], 
-        pane_id
-      )
-      
-      local pane_path = vim.fn.system(check_cwd_cmd):gsub("%s+$", "")
-      util.debug_log("Pane " .. pane_id .. " path: " .. pane_path)
-      util.debug_log("Comparing with git root: " .. git_root)
+      if cmd_line:match(claude_code_cmd) then
+        debug.log("Found node process running Claude Code")
+        is_claude = true
+      end
+    end
+    
+    -- Step 4: If it's a Claude Code pane, check if it's in the correct git repo
+    if is_claude then
+      debug.log("Found potential Claude Code pane: " .. pane_id)
+      debug.log("Checking if path '" .. pane_path .. "' is in git root '" .. git_root .. "'")
       
       -- Check if pane path is in the git repo (either exact match or subdirectory)
       if pane_path == git_root or pane_path:match("^" .. vim.fn.escape(git_root, "%-%.%*%+%?%[%]%^%$%(%)%{%}%,%/") .. "/") then
-        util.debug_log("Found Claude Code pane in correct git repo: " .. pane_id)
+        debug.log("Found Claude Code pane in correct git repo: " .. pane_id)
+        
+        -- Step 5: Add it to our instances list with priority flag
+        local is_current_session = (session == current_session)
         table.insert(instances, {
           pane_id = pane_id,
           session = session,
@@ -66,15 +93,32 @@ function M.get_claude_code_instances(git_root)
           window_idx = window_idx,
           pane_idx = pane_idx,
           command = command,
+          is_current_session = is_current_session,
           display = string.format("%s: %s.%s (%s)", session, window_idx, pane_idx, window_name)
         })
       else
-        util.debug_log("Pane " .. pane_id .. " is not in the git repo - skipping")
+        debug.log("Pane " .. pane_id .. " is not in the git repo - skipping")
       end
     end
+    
+    ::continue::
   end
   
-  util.debug_log("Found " .. #instances .. " Claude Code instances in git repo")
+  -- Step 6: Sort instances with current session first
+  table.sort(instances, function(a, b)
+    if a.is_current_session and not b.is_current_session then
+      return true
+    elseif not a.is_current_session and b.is_current_session then
+      return false
+    else
+      return a.pane_id < b.pane_id
+    end
+  end)
+  
+  debug.log("Found " .. #instances .. " Claude Code instances in git repo")
+  if #instances > 0 then
+    debug.log("First instance: " .. instances[1].pane_id .. " in session " .. instances[1].session)
+  end
   
   return instances
 end
