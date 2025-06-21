@@ -34,8 +34,21 @@ local remembered_instances = {}
 
 -- Utility to check if tmux is running
 local function is_tmux_running()
+  -- Check if TMUX environment variable is set
+  if vim.env.TMUX and vim.env.TMUX ~= "" then
+    return true
+  end
+  
+  -- Fallback to the command approach
   local result = vim.fn.system('which tmux && tmux info >/dev/null 2>&1 && echo "true" || echo "false"')
-  return vim.trim(result) == "true"
+  local is_running = vim.trim(result) == "true"
+  
+  if not is_running then
+    vim.notify("Tmux detection failed. TMUX env: " .. (vim.env.TMUX or "not set") .. 
+              ", Command result: " .. result, vim.log.levels.WARN)
+  end
+  
+  return is_running
 end
 
 -- Get git root of current file
