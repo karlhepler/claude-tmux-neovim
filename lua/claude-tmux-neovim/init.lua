@@ -8,18 +8,15 @@ local default_config = {
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
   
   -- XML template for sending context (no additional prompt text)
+  -- Adjusted for exact line number accuracy - no extra newlines in critical places
   xml_template = [[
 <context>
   <file_path>%s</file_path>
   <git_root>%s</git_root>
   <line_number>%s</line_number>
   <column_number>%s</column_number>
-  <selection>
-%s
-  </selection>
-  <file_content>
-%s
-  </file_content>
+  <selection>%s</selection>
+  <file_content>%s</file_content>
 </context>
 
 
