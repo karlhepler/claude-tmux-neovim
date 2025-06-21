@@ -66,8 +66,16 @@ end
 
 -- Get selection from visual mode
 local function get_visual_selection()
+  -- Check if last visual selection marks are available
+  if vim.fn.getpos("'<")[2] == 0 then
+    vim.notify("No visual selection found", vim.log.levels.WARN)
+    return ""
+  end
+
   local start_line, start_col = unpack(vim.fn.getpos("'<"), 2, 3)
   local end_line, end_col = unpack(vim.fn.getpos("'>"), 2, 3)
+  
+  vim.notify("Selection range: " .. start_line .. ":" .. start_col .. " to " .. end_line .. ":" .. end_col, vim.log.levels.INFO)
   
   -- Adjust columns for correct indexing
   start_col = start_col - 1
@@ -85,7 +93,12 @@ local function get_visual_selection()
     lines[#lines] = string.sub(lines[#lines], 1, end_col + 1)
   end
   
-  return table.concat(lines, '\n')
+  local result = table.concat(lines, '\n')
+  vim.notify("Selected text (length: " .. #result .. "): " .. 
+            (result:len() > 50 and (result:sub(1, 50) .. "...") or result), 
+            vim.log.levels.INFO)
+  
+  return result
 end
 
 -- Get current file's content
@@ -332,7 +345,7 @@ end
 -- Main function to send context
 function M.send_context()
   if not is_tmux_running() then
-    vim.notify("tmux is not running", vim.log.levels.ERROR)
+    vim.notify("tmux is not running. TMUX env: " .. (vim.env.TMUX or "not set"), vim.log.levels.ERROR)
     return
   end
 
@@ -355,13 +368,28 @@ function M.send_context()
   local line_num = cursor_pos[2]
   local col_num = cursor_pos[3]
   
-  -- Get selection (if in visual mode)
+  -- Get selection (if in visual mode or if there was a recent visual selection)
   local selection = ""
   local mode = vim.fn.mode()
+  local was_visual_mode = false
+  
   if mode == 'v' or mode == 'V' or mode == '' then
-    -- Exit visual mode to ensure we can work with the selection
+    -- We're currently in visual mode
+    was_visual_mode = true
     vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'nx', false)
+    vim.cmd('let g:claude_visual_mode = 1')
+  else
+    -- Check if we just exited visual mode and used the keystroke
+    was_visual_mode = vim.g.claude_visual_mode == 1
+    vim.cmd('let g:claude_visual_mode = 0')
+  end
+  
+  if was_visual_mode then
+    -- Get the visual selection
     selection = get_visual_selection()
+    vim.notify("Visual selection captured, length: " .. #selection, vim.log.levels.INFO)
+  else
+    vim.notify("Not in visual mode, sending whole file context", vim.log.levels.INFO)
   end
   
   -- Get file content
@@ -395,10 +423,14 @@ function M.setup(user_config)
   vim.api.nvim_create_user_command("ClaudeCodeReset", M.reset_instances, {})
   vim.api.nvim_create_user_command("ClaudeCodeResetGit", M.reset_git_instance, {})
   
+  -- Initialize the visual mode tracking variable
+  vim.cmd('let g:claude_visual_mode = 0')
+  
   -- Set up keymapping
   if config.keymap and config.keymap ~= "" then
     vim.api.nvim_set_keymap('n', config.keymap, ':ClaudeCodeSend<CR>', { noremap = true, silent = true })
-    vim.api.nvim_set_keymap('v', config.keymap, ':<C-u>ClaudeCodeSend<CR>', { noremap = true, silent = true })
+    -- For visual mode, we use an operator-pending mapping to preserve the selection
+    vim.api.nvim_set_keymap('v', config.keymap, '<Esc>:let g:claude_visual_mode = 1<CR>gv:ClaudeCodeSend<CR>', { noremap = true, silent = true })
   end
 end
 
