@@ -4,25 +4,47 @@
 CONTENTS                                        *claude-tmux-neovim-contents*
 
     1. Introduction ................. |claude-tmux-neovim-introduction|
-    2. Requirements ................. |claude-tmux-neovim-requirements|
-    3. Installation ................. |claude-tmux-neovim-installation|
-    4. Architecture ................. |claude-tmux-neovim-architecture|
+    2. Features ..................... |claude-tmux-neovim-features|
+    3. Requirements ................. |claude-tmux-neovim-requirements|
+    4. Installation ................. |claude-tmux-neovim-installation|
     5. Configuration ................ |claude-tmux-neovim-configuration|
     6. Usage ........................ |claude-tmux-neovim-usage|
     7. Commands ..................... |claude-tmux-neovim-commands|
     8. Keymaps ...................... |claude-tmux-neovim-keymaps|
     9. XML Format ................... |claude-tmux-neovim-xml|
-    10. Tips ........................ |claude-tmux-neovim-tips|
+    10. Architecture ................ |claude-tmux-neovim-architecture|
+    11. Debugging ................... |claude-tmux-neovim-debugging|
+    12. Tips ........................ |claude-tmux-neovim-tips|
 
 ==============================================================================
 1. INTRODUCTION                              *claude-tmux-neovim-introduction*
 
-`claude-tmux-neovim` is a Neovim plugin that integrates with Claude Code via 
-tmux. It allows you to send file context (path, git root, line numbers, 
-selection, full content) to Claude Code instances running in tmux panes.
+`claude-tmux-neovim` is a Neovim plugin that seamlessly integrates with Claude 
+Code via tmux. It allows you to send rich code context (file path, git root, 
+line numbers, selection, full content) to Claude Code instances running in 
+tmux panes with a single keystroke.
+
+The plugin acts as a bridge between your Neovim editor and Claude Code running 
+in tmux panes, enabling a smooth AI-assisted coding experience while 
+maintaining your preferred environment.
 
 ==============================================================================
-2. REQUIREMENTS                              *claude-tmux-neovim-requirements*
+2. FEATURES                                    *claude-tmux-neovim-features*
+
+- Send code context to Claude Code with a single keystroke
+- Works with visual selections for more targeted assistance
+- Git repository isolation - only shows Claude Code instances in the same repo
+- Smart instance management:
+  - Detects existing Claude Code instances in the correct git root
+  - Creates new instances if none exist
+  - Remembers choice per git repository
+- Automatically switches to Claude Code pane after sending context
+- Automatically reloads Neovim buffers when focus returns from Claude Code
+- Sends rich context in XML format optimized for LLMs
+- Debug mode for troubleshooting with detailed logging
+
+==============================================================================
+3. REQUIREMENTS                              *claude-tmux-neovim-requirements*
 
 - Neovim 0.7.0 or newer
 - tmux
@@ -30,7 +52,7 @@ selection, full content) to Claude Code instances running in tmux panes.
 - Git
 
 ==============================================================================
-3. INSTALLATION                              *claude-tmux-neovim-installation*
+4. INSTALLATION                              *claude-tmux-neovim-installation*
 
 Using a plugin manager is recommended for easier installation and updates.
 
@@ -76,19 +98,6 @@ vim.opt.rtp:prepend("~/path/to/claude-tmux-neovim")
 ```
 
 ==============================================================================
-4. ARCHITECTURE                              *claude-tmux-neovim-architecture*
-
-The plugin uses a modular architecture for maintainability and organization:
-
-- `init.lua` - Main entry point with public API
-- `lib/config.lua` - Configuration management and state tracking
-- `lib/util.lua` - Utility functions for file and text operations
-- `lib/tmux.lua` - Tmux interaction and Claude Code instance management
-- `lib/context.lua` - Context generation and XML formatting
-
-This modular design makes the codebase easier to understand, maintain, and extend.
-
-==============================================================================
 5. CONFIGURATION                            *claude-tmux-neovim-configuration*
 
 You can configure the plugin in your Neovim config:
@@ -99,8 +108,51 @@ require("claude-tmux-neovim").setup({
   claude_code_cmd = "claude",      -- Command to start Claude Code
   auto_switch_pane = true,         -- Auto switch to Claude pane
   remember_choice = true,          -- Remember instance per git repo
+  auto_reload_buffers = true,      -- Auto reload buffers when focus returns
+  debug = false,                   -- Enable debug logging
+  
+  -- Optional: custom XML template
+  xml_template = [[
+<context>
+  <file_path>%s</file_path>
+  <git_root>%s</git_root>
+  <line_number>%s</line_number>
+  <column_number>%s</column_number>
+  <selection>%s</selection>
+  <file_content>%s</file_content>
+</context>]]
 })
 ```
+
+All configuration options:
+
+`keymap` (string)
+    The key mapping to trigger sending context to Claude Code.
+    Default: "<leader>cc"
+
+`claude_code_cmd` (string) 
+    The command used to start Claude Code.
+    Default: "claude"
+
+`auto_switch_pane` (boolean)
+    Whether to automatically switch to the Claude Code pane after sending context.
+    Default: true
+
+`remember_choice` (boolean)
+    Whether to remember your chosen Claude Code instance per git repository.
+    Default: true
+
+`auto_reload_buffers` (boolean)
+    Whether to automatically reload all buffers when focus returns to Neovim.
+    Default: true
+
+`debug` (boolean)
+    Enable debug logging for troubleshooting.
+    Default: false
+
+`xml_template` (string)
+    Custom XML template for formatting context sent to Claude Code.
+    Default: see example above
 
 ==============================================================================
 6. USAGE                                          *claude-tmux-neovim-usage*
@@ -109,8 +161,11 @@ require("claude-tmux-neovim").setup({
 2. If multiple Claude Code instances are found in the same git repository,
    you'll be prompted to select one.
 3. The plugin sends the file context to Claude Code and switches to that pane.
+4. After interacting with Claude Code, when you switch back to Neovim, your
+   buffers will automatically reload to reflect any changes.
 
-Visual mode will include the selection in the XML context.
+In visual mode, only your selected code will be included in the XML context,
+helping Claude Code focus on the specific portion you need help with.
 
 ==============================================================================
 7. COMMANDS                                    *claude-tmux-neovim-commands*
@@ -124,13 +179,34 @@ Visual mode will include the selection in the XML context.
 *:ClaudeCodeResetGit*
     Reset the remembered Claude Code instance for the current git repository.
 
+*:ClaudeCodeReload*
+    Manually reload all Neovim buffers from disk.
+
+*:ClaudeCodeDebug*
+    Toggle debug mode for troubleshooting.
+
+*:ClaudeCodeShowLog*
+    Show the debug log in a split window.
+
+*:ClaudeCodeClearLog*
+    Clear the debug log file.
+
 ==============================================================================
 8. KEYMAPS                                      *claude-tmux-neovim-keymaps*
 
 By default, the plugin maps `<leader>cc` in both normal and visual mode to
 send context to Claude Code.
 
-You can change this by setting the `keymap` option in the setup function.
+You can change this by setting the `keymap` option in the setup function:
+
+```lua
+require("claude-tmux-neovim").setup({
+  keymap = "<leader>c",  -- Use a different keymap
+  -- other options...
+})
+```
+
+If you set `keymap` to an empty string, no keymaps will be created.
 
 ==============================================================================
 9. XML FORMAT                                      *claude-tmux-neovim-xml*
@@ -148,17 +224,77 @@ The plugin sends context to Claude Code in an XML format:
 </context>
 ```
 
+This format helps Claude Code understand the exact context of your code,
+making its responses more relevant and accurate.
+
 You can customize this format by setting the `xml_template` option in the
-setup function.
+setup function. The template uses string.format with the following parameters:
+1. file_path
+2. git_root
+3. line_number
+4. column_number
+5. selection (empty string if not in visual mode)
+6. file_content
 
 ==============================================================================
-10. TIPS                                         *claude-tmux-neovim-tips*
+10. ARCHITECTURE                            *claude-tmux-neovim-architecture*
+
+The plugin uses a modular architecture for maintainability and organization:
+
+- `init.lua` - Main entry point with public API
+- `lib/config.lua` - Configuration management and state tracking
+- `lib/util.lua` - Utility functions for file and text operations
+- `lib/tmux.lua` - Tmux interaction and Claude Code instance management
+- `lib/context.lua` - Context generation and XML formatting
+- `lib/debug.lua` - Debug logging functionality
+- `lib/silent.lua` - Handles silent operations for better UX
+
+This modular design makes the codebase easier to understand, maintain, and extend.
+
+==============================================================================
+11. DEBUGGING                                *claude-tmux-neovim-debugging*
+
+If you encounter issues with the plugin, you can enable debug mode to get
+more detailed information:
+
+1. Enable debug mode in your configuration:
+   ```lua
+   require("claude-tmux-neovim").setup({
+     debug = true,
+     -- other options...
+   })
+   ```
+
+2. Or toggle debug mode during a session:
+   ```
+   :ClaudeCodeDebug
+   ```
+
+3. View the debug log:
+   ```
+   :ClaudeCodeShowLog
+   ```
+
+4. Clear the debug log if it gets too large:
+   ```
+   :ClaudeCodeClearLog
+   ```
+
+The debug log is stored at:
+`vim.fn.stdpath('cache') .. '/claude-tmux-neovim-debug.log'`
+
+==============================================================================
+12. TIPS                                         *claude-tmux-neovim-tips*
 
 - Use `<leader>cc` in visual mode to send only selected code for review.
 - The plugin remembers your chosen Claude Code instance per git repository.
 - If no Claude Code instances are found, a new one will be created.
 - You can reset remembered instances with `:ClaudeCodeReset`.
 - For multi-project workflows, the plugin isolates instances by git repository.
+- If Claude Code makes changes to your files, they'll be automatically reloaded
+  when you return to Neovim. You can also manually reload with `:ClaudeCodeReload`.
+- When troubleshooting issues with detection of Claude Code instances, try
+  enabling debug mode and checking the log.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

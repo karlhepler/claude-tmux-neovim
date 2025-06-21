@@ -8,23 +8,14 @@ A Neovim plugin that seamlessly integrates with Claude Code via tmux, allowing y
 - **Rich context sharing**: Automatically includes file path, git root, cursor position, and optional selections
 - **Seamless integration**: Works within your existing tmux sessions and git workflow
 - **Smart instance management**: Detects existing Claude Code instances or creates new ones as needed
+- **Automatic file reloading**: When returning to Neovim from Claude Code, files are automatically reloaded to reflect any changes
 
 This plugin acts as a bridge between your Neovim editor and Claude Code running in tmux panes, enabling a smooth AI-assisted coding experience while maintaining your preferred environment.
-
-## Architecture
-
-The plugin uses a modular architecture for maintainability:
-
-- `init.lua` - Main entry point with public API
-- `lib/config.lua` - Configuration management
-- `lib/util.lua` - Utility functions
-- `lib/tmux.lua` - Tmux interaction
-- `lib/context.lua` - Context generation and formatting
 
 ## Features
 
 - Press `<leader>cc` to send context to Claude Code
-- Works with visual selections
+- Works with visual selections for more targeted assistance
 - Git repository isolation - only shows Claude Code instances in the same git repository
 - Smart instance management:
   - Detects existing Claude Code instances in the correct git root
@@ -33,6 +24,7 @@ The plugin uses a modular architecture for maintainability:
 - Automatically switches to Claude Code pane after sending context
 - Automatically reloads Neovim buffers when focus returns from Claude Code
 - Sends rich context in XML format optimized for LLMs
+- Debug mode for troubleshooting with detailed logging
 
 ## Requirements
 
@@ -110,6 +102,7 @@ require("claude-tmux-neovim").setup({
   auto_switch_pane = true,         -- Auto switch to Claude pane
   remember_choice = true,          -- Remember instance per git repo
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns to Neovim
+  debug = false,                   -- Enable debug logging
 })
 ```
 
@@ -131,8 +124,9 @@ This approach keeps both environments running independently while creating an ef
 1. Press `<leader>cc` (or your configured keymap) in normal or visual mode.
 2. If multiple Claude Code instances are found in the same git repository, you'll be prompted to select one.
 3. The plugin sends the file context to Claude Code and switches to that pane.
+4. After interacting with Claude Code, when you switch back to Neovim, your buffers will automatically reload to reflect any changes.
 
-Visual mode will include the selection in the XML context.
+In visual mode, only your selected code will be included in the XML context, helping Claude Code focus on the specific portion you need help with.
 
 ## Commands
 
@@ -158,6 +152,20 @@ The plugin sends context to Claude Code in an XML format:
   <file_content>full_file_content_here</file_content>
 </context>
 ```
+
+This format helps Claude Code understand the exact context of your code, making its responses more relevant and accurate.
+
+## Architecture
+
+The plugin uses a modular architecture for maintainability:
+
+- `init.lua` - Main entry point with public API
+- `lib/config.lua` - Configuration management and state tracking
+- `lib/util.lua` - Utility functions for file and text operations
+- `lib/tmux.lua` - Tmux interaction and Claude Code instance management
+- `lib/context.lua` - Context generation and XML formatting
+- `lib/debug.lua` - Debug logging functionality
+- `lib/silent.lua` - Handles silent operations for better UX
 
 ## License
 
