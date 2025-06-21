@@ -11,6 +11,7 @@ M.defaults = {
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
   debug = false, -- Enable debug logging
+  auto_reload_buffers = true, -- Automatically reload buffers when returning from Claude Code
   
   -- XML template for sending context
   xml_template = [[

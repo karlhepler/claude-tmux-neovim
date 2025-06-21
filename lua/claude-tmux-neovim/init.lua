@@ -16,6 +16,17 @@ local debug = require('claude-tmux-neovim.lib.debug')
 -- Define module
 local M = {}
 
+-- Set up autocommand for buffer reloading
+local function setup_buffer_reload()
+  -- Create autocommand for buffer reloading when focus returns to Neovim
+  vim.cmd([[
+    augroup claude_tmux_buffer_reload
+      autocmd!
+      autocmd FocusGained * lua require('claude-tmux-neovim.lib.tmux').reload_buffers()
+    augroup END
+  ]])
+end
+
 --- Reset all remembered instances
 function M.reset_instances()
   config.reset_instances()
@@ -67,6 +78,12 @@ function M.clear_debug_log()
   debug.clear_log()
 end
 
+--- Manually reload buffers to reflect changes from Claude Code
+function M.reload_buffers()
+  tmux.reload_buffers()
+  vim.notify("All buffers reloaded", vim.log.levels.INFO)
+end
+
 --- Main function to send context
 ---@param opts table|nil Command options including range information
 function M.send_context(opts)
@@ -101,6 +118,11 @@ function M.setup(user_config)
     debug.init()
   end
   
+  -- Set up buffer reloading if enabled
+  if config.get().auto_reload_buffers then
+    setup_buffer_reload()
+  end
+  
   -- Create wrapper function to silently send context
   local function silent_send_context(opts)
     -- Use pcall to suppress errors
@@ -124,6 +146,7 @@ function M.setup(user_config)
   vim.api.nvim_create_user_command("ClaudeCodeDebug", M.toggle_debug, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeShowLog", M.show_debug_log, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeClearLog", M.clear_debug_log, { bang = true })
+  vim.api.nvim_create_user_command("ClaudeCodeReload", M.reload_buffers, { bang = true })
   
   -- Set up keymapping using a Lua function callback for complete silence
   if config.get().keymap and config.get().keymap ~= "" then

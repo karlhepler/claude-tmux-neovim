@@ -31,6 +31,7 @@ The plugin uses a modular architecture for maintainability:
   - Creates new instances if none exist
   - Remembers choice per git repository
 - Automatically switches to Claude Code pane after sending context
+- Automatically reloads Neovim buffers when focus returns from Claude Code
 - Sends rich context in XML format optimized for LLMs
 
 ## Requirements
@@ -108,6 +109,7 @@ require("claude-tmux-neovim").setup({
   claude_code_cmd = "claude",      -- Command to start Claude Code
   auto_switch_pane = true,         -- Auto switch to Claude pane
   remember_choice = true,          -- Remember instance per git repo
+  auto_reload_buffers = true,      -- Auto reload buffers when focus returns to Neovim
 })
 ```
 
@@ -120,6 +122,7 @@ The plugin creates a seamless workflow between Neovim and Claude Code running in
 3. If no instances exist, it creates a new tmux window running Claude Code
 4. The context is formatted as structured XML and sent to the Claude Code instance via tmux
 5. If configured, your tmux focus automatically switches to the Claude Code pane for immediate interaction
+6. When you return to Neovim (FocusGained event), all buffers are automatically reloaded to reflect any changes made by Claude Code
 
 This approach keeps both environments running independently while creating an efficient bridge between them.
 
@@ -136,6 +139,10 @@ Visual mode will include the selection in the XML context.
 - `:ClaudeCodeSend` - Send the current file context to Claude Code.
 - `:ClaudeCodeReset` - Reset all remembered Claude Code instances.
 - `:ClaudeCodeResetGit` - Reset the remembered Claude Code instance for the current git repository.
+- `:ClaudeCodeReload` - Manually reload all Neovim buffers from disk.
+- `:ClaudeCodeDebug` - Toggle debug mode for troubleshooting.
+- `:ClaudeCodeShowLog` - Show the debug log in a split window.
+- `:ClaudeCodeClearLog` - Clear the debug log file.
 
 ## XML Format
 

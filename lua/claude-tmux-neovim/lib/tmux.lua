@@ -289,6 +289,25 @@ function M.send_to_claude_code(instance, context)
   return true
 end
 
+--- Reload all buffers to refresh content from disk
+function M.reload_buffers()
+  -- Check for file changes and reload all modified buffers
+  vim.cmd("checktime")
+  
+  -- For all open buffers, force reload if they're regular files
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    -- Only reload if buffer is loaded and is a file
+    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].buftype == "" then
+      -- Use edit command with bang to force reload from disk
+      local bufname = vim.api.nvim_buf_get_name(buf)
+      if bufname ~= "" then
+        -- Silently reload the buffer if it's a file
+        vim.cmd("silent! e! " .. vim.fn.fnameescape(bufname))
+      end
+    end
+  end
+end
+
 --- Get or create a Claude Code instance and execute callback
 ---@param git_root string The git repository root path
 ---@param callback function Function to call with the instance
