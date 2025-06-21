@@ -9,15 +9,14 @@ local default_config = {
   line_number_offset = 10, -- Adjust line number by adding this value (positive or negative)
   
   -- XML template for sending context (no additional prompt text or newlines)
-  -- Use CDATA sections to prevent potential XML parsing issues with content
   xml_template = [[
 <context>
   <file_path>%s</file_path>
   <git_root>%s</git_root>
   <line_number>%s</line_number>
   <column_number>%s</column_number>
-  <selection><![CDATA[%s]]></selection>
-  <file_content><![CDATA[%s]]></file_content>
+  <selection>%s</selection>
+  <file_content>%s</file_content>
 </context>]],
 }
 
@@ -410,7 +409,14 @@ function M.send_context(opts)
   -- Get file content
   local file_content = get_file_content()
   
-  -- Create the context XML with adjusted line numbers
+  -- Log specific line information for debugging
+  if line_num > 1 and line_num <= vim.api.nvim_buf_line_count(0) then
+    local reported_line_content = vim.api.nvim_buf_get_lines(0, line_num - 1, line_num, false)[1] or ""
+    vim.notify(string.format("Content at line %d: %s", line_num, reported_line_content),
+              vim.log.levels.INFO)
+  end
+  
+  -- Create the context XML
   local context = string.format(config.xml_template,
     file_path,
     git_root,
