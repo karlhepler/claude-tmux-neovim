@@ -356,29 +356,22 @@ function M.send_context(opts)
     return
   end
   
-  -- Get cursor position - with manual adjustment to fix line number offset
-  local cursor_pos = vim.fn.getpos('.')
-  local line_num = cursor_pos[2] - 3  -- Apply -3 offset to fix line number discrepancy
-  local col_num = cursor_pos[3]
+  -- Get cursor position - using a different approach to fix line number issues
+  -- Get the actual line number directly from the current buffer position
+  local line_num = vim.api.nvim_win_get_cursor(0)[1]
+  local col_num = vim.api.nvim_win_get_cursor(0)[2] + 1  -- Column is 0-based, so add 1
   
   -- Log the current cursor position for debugging
-  vim.notify("Original cursor at line " .. cursor_pos[2] .. ", adjusted to " .. line_num .. ", column " .. col_num, vim.log.levels.INFO)
+  vim.notify("Current cursor position: line " .. line_num .. ", column " .. col_num, vim.log.levels.INFO)
   
   -- Get selection (if range is provided)
   local selection = ""
   
   -- Check if we have a range (visual selection)
   if opts and opts.range and opts.range > 0 then
-    -- Adjust range by -3 to fix line number offset
-    local adjusted_line1 = opts.line1 - 3
-    local adjusted_line2 = opts.line2 - 3
-    if adjusted_line1 < 1 then adjusted_line1 = 1 end
+    vim.notify("Range detected: " .. opts.line1 .. " to " .. opts.line2, vim.log.levels.INFO)
     
-    vim.notify("Range detected: " .. opts.line1 .. "-" .. opts.line2 .. 
-               ", adjusted to: " .. adjusted_line1 .. "-" .. adjusted_line2, 
-               vim.log.levels.INFO)
-    
-    -- Get the text from the specified range
+    -- Use exactly the range provided - no adjustment necessary
     local lines = vim.api.nvim_buf_get_lines(0, opts.line1 - 1, opts.line2, false)
     if lines and #lines > 0 then
       selection = table.concat(lines, '\n')
