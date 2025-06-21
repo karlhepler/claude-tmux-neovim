@@ -1,0 +1,127 @@
+*claude-tmux-neovim.txt*  Neovim + Claude Code + tmux integration
+
+==============================================================================
+CONTENTS                                        *claude-tmux-neovim-contents*
+
+    1. Introduction ................. |claude-tmux-neovim-introduction|
+    2. Requirements ................. |claude-tmux-neovim-requirements|
+    3. Installation ................. |claude-tmux-neovim-installation|
+    4. Configuration ................ |claude-tmux-neovim-configuration|
+    5. Usage ........................ |claude-tmux-neovim-usage|
+    6. Commands ..................... |claude-tmux-neovim-commands|
+    7. Keymaps ...................... |claude-tmux-neovim-keymaps|
+    8. XML Format ................... |claude-tmux-neovim-xml|
+    9. Tips ......................... |claude-tmux-neovim-tips|
+
+==============================================================================
+1. INTRODUCTION                              *claude-tmux-neovim-introduction*
+
+`claude-tmux-neovim` is a Neovim plugin that integrates with Claude Code via 
+tmux. It allows you to send file context (path, git root, line numbers, 
+selection, full content) to Claude Code instances running in tmux panes.
+
+==============================================================================
+2. REQUIREMENTS                              *claude-tmux-neovim-requirements*
+
+- Neovim 0.7.0 or newer
+- tmux
+- Claude Code CLI
+- Git
+
+==============================================================================
+3. INSTALLATION                              *claude-tmux-neovim-installation*
+
+You can install the plugin manually by cloning the repository:
+
+```
+git clone https://github.com/karlhepler/claude-tmux-neovim.git \
+  ~/.local/share/nvim/site/pack/plugins/start/claude-tmux-neovim
+```
+
+Or add it to your runtime path manually in your Neovim config:
+
+```lua
+-- Add the plugin to runtime path
+vim.opt.rtp:prepend("~/github.com/karlhepler/claude-tmux-neovim")
+```
+
+==============================================================================
+4. CONFIGURATION                            *claude-tmux-neovim-configuration*
+
+You can configure the plugin in your Neovim config:
+
+```lua
+require("claude-tmux-neovim").setup({
+  keymap = "<leader>cc",           -- Key binding for trigger
+  claude_code_cmd = "claude",      -- Command to start Claude Code
+  auto_switch_pane = true,         -- Auto switch to Claude pane
+  remember_choice = true,          -- Remember instance per git repo
+})
+```
+
+==============================================================================
+5. USAGE                                          *claude-tmux-neovim-usage*
+
+1. Press `<leader>cc` (or your configured keymap) in normal or visual mode.
+2. If multiple Claude Code instances are found in the same git repository,
+   you'll be prompted to select one.
+3. The plugin sends the file context to Claude Code and switches to that pane.
+
+Visual mode will include the selection in the XML context.
+
+==============================================================================
+6. COMMANDS                                    *claude-tmux-neovim-commands*
+
+*:ClaudeCodeSend*
+    Send the current file context to Claude Code.
+
+*:ClaudeCodeReset*
+    Reset all remembered Claude Code instances.
+
+*:ClaudeCodeResetGit*
+    Reset the remembered Claude Code instance for the current git repository.
+
+==============================================================================
+7. KEYMAPS                                      *claude-tmux-neovim-keymaps*
+
+By default, the plugin maps `<leader>cc` in both normal and visual mode to
+send context to Claude Code.
+
+You can change this by setting the `keymap` option in the setup function.
+
+==============================================================================
+8. XML FORMAT                                      *claude-tmux-neovim-xml*
+
+The plugin sends context to Claude Code in an XML format:
+
+```xml
+<context>
+  <file_path>/path/to/file.lua</file_path>
+  <git_root>/path/to/project</git_root>
+  <line_number>42</line_number>
+  <column_number>15</column_number>
+  <selection>
+    selected_text_here
+  </selection>
+  <file_content>
+    full_file_content_here
+  </file_content>
+</context>
+
+Please review this code context.
+```
+
+You can customize this format by setting the `xml_template` option in the
+setup function.
+
+==============================================================================
+9. TIPS                                          *claude-tmux-neovim-tips*
+
+- Use `<leader>cc` in visual mode to send only selected code for review.
+- The plugin remembers your chosen Claude Code instance per git repository.
+- If no Claude Code instances are found, a new one will be created.
+- You can reset remembered instances with `:ClaudeCodeReset`.
+- For multi-project workflows, the plugin isolates instances by git repository.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
