@@ -343,7 +343,7 @@ function M.reset_git_instance()
 end
 
 -- Main function to send context
-function M.send_context()
+function M.send_context(opts)
   if not is_tmux_running() then
     vim.notify("tmux is not running. TMUX env: " .. (vim.env.TMUX or "not set"), vim.log.levels.ERROR)
     return
@@ -368,28 +368,21 @@ function M.send_context()
   local line_num = cursor_pos[2]
   local col_num = cursor_pos[3]
   
-  -- Get selection (if in visual mode or if there was a recent visual selection)
+  -- Get selection (if range is provided)
   local selection = ""
-  local mode = vim.fn.mode()
-  local was_visual_mode = false
   
-  if mode == 'v' or mode == 'V' or mode == '' then
-    -- We're currently in visual mode
-    was_visual_mode = true
-    vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'nx', false)
-    vim.cmd('let g:claude_visual_mode = 1')
+  -- Check if we have a range (visual selection)
+  if opts and opts.range and opts.range > 0 then
+    vim.notify("Range detected: " .. opts.line1 .. " to " .. opts.line2, vim.log.levels.INFO)
+    
+    -- Get the text from the specified range
+    local lines = vim.api.nvim_buf_get_lines(0, opts.line1 - 1, opts.line2, false)
+    if lines and #lines > 0 then
+      selection = table.concat(lines, '\n')
+      vim.notify("Visual selection captured, length: " .. #selection, vim.log.levels.INFO)
+    end
   else
-    -- Check if we just exited visual mode and used the keystroke
-    was_visual_mode = vim.g.claude_visual_mode == 1
-    vim.cmd('let g:claude_visual_mode = 0')
-  end
-  
-  if was_visual_mode then
-    -- Get the visual selection
-    selection = get_visual_selection()
-    vim.notify("Visual selection captured, length: " .. #selection, vim.log.levels.INFO)
-  else
-    vim.notify("Not in visual mode, sending whole file context", vim.log.levels.INFO)
+    vim.notify("No range provided, sending whole file context", vim.log.levels.INFO)
   end
   
   -- Get file content
@@ -419,18 +412,15 @@ function M.setup(user_config)
   config = vim.tbl_deep_extend("force", default_config, user_config or {})
   
   -- Create user commands
-  vim.api.nvim_create_user_command("ClaudeCodeSend", M.send_context, {})
+  vim.api.nvim_create_user_command("ClaudeCodeSend", M.send_context, { range = true })
   vim.api.nvim_create_user_command("ClaudeCodeReset", M.reset_instances, {})
   vim.api.nvim_create_user_command("ClaudeCodeResetGit", M.reset_git_instance, {})
-  
-  -- Initialize the visual mode tracking variable
-  vim.cmd('let g:claude_visual_mode = 0')
   
   -- Set up keymapping
   if config.keymap and config.keymap ~= "" then
     vim.api.nvim_set_keymap('n', config.keymap, ':ClaudeCodeSend<CR>', { noremap = true, silent = true })
-    -- For visual mode, we use an operator-pending mapping to preserve the selection
-    vim.api.nvim_set_keymap('v', config.keymap, '<Esc>:let g:claude_visual_mode = 1<CR>gv:ClaudeCodeSend<CR>', { noremap = true, silent = true })
+    -- For visual mode, use the built-in range functionality
+    vim.api.nvim_set_keymap('v', config.keymap, ":'<,'>ClaudeCodeSend<CR>", { noremap = true, silent = true })
   end
 end
 
