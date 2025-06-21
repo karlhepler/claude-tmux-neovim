@@ -6,6 +6,7 @@ local default_config = {
   claude_code_cmd = "claude", -- Command to start Claude Code
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
+  line_number_offset = 10, -- Adjust line number by adding this value (positive or negative)
   
   -- XML template for sending context (no additional prompt text or newlines)
   xml_template = [[
@@ -356,22 +357,36 @@ function M.send_context(opts)
     return
   end
   
-  -- Get cursor position - using a different approach to fix line number issues
-  -- Get the actual line number directly from the current buffer position
-  local line_num = vim.api.nvim_win_get_cursor(0)[1]
+  -- Get cursor position with configurable offset for accurate line numbers
+  local buf_line_num = vim.api.nvim_win_get_cursor(0)[1]
   local col_num = vim.api.nvim_win_get_cursor(0)[2] + 1  -- Column is 0-based, so add 1
   
+  -- Apply the line number offset from config
+  local line_num = buf_line_num + config.line_number_offset
+  if line_num < 1 then line_num = 1 end
+  
   -- Log the current cursor position for debugging
-  vim.notify("Current cursor position: line " .. line_num .. ", column " .. col_num, vim.log.levels.INFO)
+  vim.notify(string.format("Line number: buffer reports %d, adjusted to %d with offset %d", 
+                         buf_line_num, line_num, config.line_number_offset), 
+           vim.log.levels.INFO)
   
   -- Get selection (if range is provided)
   local selection = ""
   
   -- Check if we have a range (visual selection)
   if opts and opts.range and opts.range > 0 then
-    vim.notify("Range detected: " .. opts.line1 .. " to " .. opts.line2, vim.log.levels.INFO)
+    -- Apply the same offset to the visual selection range
+    local adjusted_line1 = opts.line1 + config.line_number_offset
+    local adjusted_line2 = opts.line2 + config.line_number_offset
+    if adjusted_line1 < 1 then adjusted_line1 = 1 end
+    if adjusted_line2 < 1 then adjusted_line2 = 1 end
     
-    -- Use exactly the range provided - no adjustment necessary
+    vim.notify(string.format("Range: buffer reports %d-%d, adjusted to %d-%d with offset %d", 
+                            opts.line1, opts.line2, adjusted_line1, adjusted_line2, 
+                            config.line_number_offset), 
+              vim.log.levels.INFO)
+    
+    -- Use the original range for getting text content
     local lines = vim.api.nvim_buf_get_lines(0, opts.line1 - 1, opts.line2, false)
     if lines and #lines > 0 then
       selection = table.concat(lines, '\n')
@@ -384,7 +399,7 @@ function M.send_context(opts)
   -- Get file content
   local file_content = get_file_content()
   
-  -- Create the context XML
+  -- Create the context XML with adjusted line numbers
   local context = string.format(config.xml_template,
     file_path,
     git_root,
