@@ -7,8 +7,7 @@ local default_config = {
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
   
-  -- XML template for sending context (no additional prompt text)
-  -- Adjusted for exact line number accuracy - no extra newlines in critical places
+  -- XML template for sending context (no additional prompt text or newlines)
   xml_template = [[
 <context>
   <file_path>%s</file_path>
@@ -17,10 +16,7 @@ local default_config = {
   <column_number>%s</column_number>
   <selection>%s</selection>
   <file_content>%s</file_content>
-</context>
-
-
-]],
+</context>]],
 }
 
 -- Store config
@@ -360,20 +356,27 @@ function M.send_context(opts)
     return
   end
   
-  -- Get cursor position - adjusted for proper line references
+  -- Get cursor position - with manual adjustment to fix line number offset
   local cursor_pos = vim.fn.getpos('.')
-  local line_num = cursor_pos[2]
+  local line_num = cursor_pos[2] - 3  -- Apply -3 offset to fix line number discrepancy
   local col_num = cursor_pos[3]
   
   -- Log the current cursor position for debugging
-  vim.notify("Current cursor at line " .. line_num .. ", column " .. col_num, vim.log.levels.INFO)
+  vim.notify("Original cursor at line " .. cursor_pos[2] .. ", adjusted to " .. line_num .. ", column " .. col_num, vim.log.levels.INFO)
   
   -- Get selection (if range is provided)
   local selection = ""
   
   -- Check if we have a range (visual selection)
   if opts and opts.range and opts.range > 0 then
-    vim.notify("Range detected: " .. opts.line1 .. " to " .. opts.line2, vim.log.levels.INFO)
+    -- Adjust range by -3 to fix line number offset
+    local adjusted_line1 = opts.line1 - 3
+    local adjusted_line2 = opts.line2 - 3
+    if adjusted_line1 < 1 then adjusted_line1 = 1 end
+    
+    vim.notify("Range detected: " .. opts.line1 .. "-" .. opts.line2 .. 
+               ", adjusted to: " .. adjusted_line1 .. "-" .. adjusted_line2, 
+               vim.log.levels.INFO)
     
     -- Get the text from the specified range
     local lines = vim.api.nvim_buf_get_lines(0, opts.line1 - 1, opts.line2, false)
