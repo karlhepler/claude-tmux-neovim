@@ -403,7 +403,15 @@ function M.send_context(opts)
                 vim.log.levels.INFO)
     end
   else
-    vim.notify("No range provided, sending whole file context", vim.log.levels.INFO)
+    -- No visual selection - include the current line content as the selection
+    if line_num > 0 and line_num <= vim.api.nvim_buf_line_count(0) then
+      local current_line = vim.api.nvim_buf_get_lines(0, line_num - 1, line_num, false)[1] or ""
+      selection = current_line
+      vim.notify(string.format("Current line captured as selection: '%s'", current_line),
+                vim.log.levels.INFO)
+    else
+      vim.notify("No range provided, and current line is invalid", vim.log.levels.WARN)
+    end
   end
   
   -- Get file content
