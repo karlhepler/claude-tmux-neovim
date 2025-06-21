@@ -47,8 +47,11 @@ function M.create_context(opts)
   -- Get selection (from visual range or current line)
   local selection = ""
   
+  -- If we were provided with explicit selection text, use it
+  if opts and opts.selection_text and opts.selection_text ~= "" then
+    selection = opts.selection_text
   -- Check if we have a range (visual selection)
-  if opts and opts.range and opts.range > 0 then
+  elseif opts and opts.range and opts.range > 0 then
     selection = util.get_selection_from_range(opts.line1, opts.line2)
   else
     -- No visual selection - include current line content
