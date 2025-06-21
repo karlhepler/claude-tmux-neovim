@@ -7,7 +7,7 @@ local default_config = {
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
   
-  -- XML template for sending context
+  -- XML template for sending context (no additional prompt text)
   xml_template = [[
 <context>
   <file_path>%s</file_path>
@@ -22,7 +22,7 @@ local default_config = {
   </file_content>
 </context>
 
-Please review this code context.
+
 ]],
 }
 
@@ -363,10 +363,13 @@ function M.send_context(opts)
     return
   end
   
-  -- Get cursor position
+  -- Get cursor position - adjusted for proper line references
   local cursor_pos = vim.fn.getpos('.')
   local line_num = cursor_pos[2]
   local col_num = cursor_pos[3]
+  
+  -- Log the current cursor position for debugging
+  vim.notify("Current cursor at line " .. line_num .. ", column " .. col_num, vim.log.levels.INFO)
   
   -- Get selection (if range is provided)
   local selection = ""
