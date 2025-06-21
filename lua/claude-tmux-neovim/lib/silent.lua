@@ -49,22 +49,27 @@ end
 
 --- Send context from visual mode silently
 function M.send_visual()
-  -- Save current mode
-  local mode = vim.api.nvim_get_mode().mode
-  debug.log("Current mode: " .. mode)
+  -- The most reliable way to get the visual selection text is to use registers
+  local save_reg = vim.fn.getreg('"')  -- Save default register
+  local save_regtype = vim.fn.getregtype('"')
   
-  -- Force visual selection marks to be updated
-  vim.cmd("normal! gv")
+  -- Yank the visual selection into the default register
+  -- We need to execute this immediately, not schedule it
+  vim.api.nvim_command('normal! gvy')
   
-  -- Get visual selection range
-  local start_line, end_line = vim.fn.line("'<"), vim.fn.line("'>") 
-  debug.log(string.format("Visual selection: lines %d-%d", start_line, end_line))
+  -- Get the yanked text
+  local selection = vim.fn.getreg('"')
   
-  -- Get the actual selected text
-  local selection = get_visual_selection()
+  debug.log("Yanked selection: " .. selection)
   
-  -- Exit visual mode first (to avoid issues with command)
-  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'x', true)
+  -- Get the visual range (this is backup information)
+  local start_line = vim.fn.line("'<")
+  local end_line = vim.fn.line("'>")
+  
+  debug.log(string.format("Visual selection range: %d-%d", start_line, end_line))
+  
+  -- Restore default register
+  vim.fn.setreg('"', save_reg, save_regtype)
   
   -- Use pcall to suppress any errors
   pcall(function()
@@ -73,7 +78,7 @@ function M.send_visual()
       range = 1,
       line1 = start_line,
       line2 = end_line,
-      selection_text = selection -- Pass the actual selected text
+      selection_text = selection -- Pass the actual yanked text
     })
     
     if context_data then
@@ -91,8 +96,9 @@ function M.send_visual()
     end
   end)
   
-  -- Clear command line
+  -- Clear command line and exit visual mode
   vim.cmd("echo ''")
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
 end
 
 return M

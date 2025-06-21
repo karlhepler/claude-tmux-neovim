@@ -155,9 +155,9 @@ function M.setup(user_config)
       [[<cmd>lua require('claude-tmux-neovim.lib.silent').send_normal()<CR>]], 
       { noremap = true, silent = true })
     
-    -- Visual mode - use Lua function directly instead of command
-    vim.api.nvim_set_keymap('v', config.get().keymap, 
-      [[<cmd>lua require('claude-tmux-neovim.lib.silent').send_visual()<CR>]], 
+    -- For visual mode, use a more direct approach with :xnoremap to ensure it works properly
+    vim.api.nvim_set_keymap('x', config.get().keymap, 
+      [[<ESC>:lua require('claude-tmux-neovim.lib.silent').send_visual()<CR>]], 
       { noremap = true, silent = true })
   end
 end
