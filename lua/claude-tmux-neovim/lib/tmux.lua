@@ -64,14 +64,31 @@ function M.get_claude_code_instances(git_root)
       is_claude = true
     -- Method 3: For shell wrappers - check if it's a node.js process running claude code
     elseif command == "node" then
-      -- Get the command line for this pane to check if it's running claude
-      local cmd_line_cmd = string.format([[tmux display-message -p -t %s '#{pane_current_command}']], pane_id)
-      local cmd_line = vim.fn.system(cmd_line_cmd):gsub("%s+$", "")
-      debug.log("Node process found, command line: " .. cmd_line)
+      debug.log("Found Node.js process in pane " .. pane_id)
       
-      if cmd_line:match(claude_code_cmd) then
-        debug.log("Found node process running Claude Code")
+      -- Special case for Claude Code which often runs as a Node.js process
+      -- First, check the window name (often contains "claude" for Claude Code)
+      if window_name:lower():match("claude") then
+        debug.log("Window name contains 'claude', assuming Claude Code: " .. window_name)
         is_claude = true
+      else
+        -- Try to get process information for the Node.js process
+        local ps_cmd = string.format("ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", pane_id)
+        debug.log("Running ps command: " .. ps_cmd)
+        local ps_output = vim.fn.system(ps_cmd):gsub("%s+$", "")
+        debug.log("Process command line: " .. ps_output)
+        
+        -- Check for Claude Code indicators in the process command line
+        if ps_output:lower():match("claude") then
+          debug.log("Process command line contains 'claude', assuming Claude Code")
+          is_claude = true
+        else
+          -- If the Node.js process is in the git repo root, it's likely Claude Code
+          if pane_path == git_root then
+            debug.log("Node.js process is in git repo root, likely Claude Code")
+            is_claude = true
+          end
+        end
       end
     end
     
@@ -116,6 +133,39 @@ function M.get_claude_code_instances(git_root)
   end)
   
   debug.log("Found " .. #instances .. " Claude Code instances in git repo")
+  
+  -- If no instances found, try a more aggressive approach - look for ANY node process in the git repo
+  if #instances == 0 then
+    debug.log("No Claude Code instances found with standard methods, trying aggressive fallback")
+    
+    for line in result:gmatch("[^\r\n]+") do
+      local pane_id, session, window_name, window_idx, pane_idx, command, pane_path = 
+        line:match("(%%[0-9]+) ([^ ]+) ([^ ]+) ([0-9]+) ([0-9]+) ([^ ]+) (.*)")
+      
+      if pane_id and command and pane_path then
+        -- Check if this pane is in the git repo root
+        if pane_path == git_root and command == "node" then
+          debug.log("AGGRESSIVE MODE: Found Node.js process in git repo root: " .. pane_id)
+          
+          -- Add as a Claude Code instance
+          local is_current_session = (session == current_session)
+          table.insert(instances, {
+            pane_id = pane_id,
+            session = session,
+            window_name = window_name,
+            window_idx = window_idx,
+            pane_idx = pane_idx,
+            command = command,
+            is_current_session = is_current_session,
+            display = string.format("%s: %s.%s (%s) [Auto-detected]", session, window_idx, pane_idx, window_name)
+          })
+        end
+      end
+    end
+    
+    debug.log("After aggressive fallback, found " .. #instances .. " potential Claude Code instances")
+  end
+  
   if #instances > 0 then
     debug.log("First instance: " .. instances[1].pane_id .. " in session " .. instances[1].session)
   end
