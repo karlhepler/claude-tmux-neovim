@@ -10,6 +10,7 @@ M.defaults = {
   claude_code_cmd = "claude", -- Command to start Claude Code
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
+  debug = false, -- Enable debug logging
   
   -- XML template for sending context
   xml_template = [[

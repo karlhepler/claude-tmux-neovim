@@ -45,6 +45,12 @@ function M.reset_git_instance()
   end
 end
 
+--- Toggle debug mode
+function M.toggle_debug()
+  vim.g.claude_tmux_neovim_debug = not vim.g.claude_tmux_neovim_debug
+  vim.notify("Claude Code debug mode: " .. (vim.g.claude_tmux_neovim_debug and "ON" or "OFF"), vim.log.levels.INFO)
+end
+
 --- Main function to send context
 ---@param opts table|nil Command options including range information
 function M.send_context(opts)
@@ -71,6 +77,9 @@ function M.setup(user_config)
   -- Initialize configuration
   config.setup(user_config)
   
+  -- Set global debug flag based on config
+  vim.g.claude_tmux_neovim_debug = config.get().debug
+  
   -- Create wrapper function to silently send context
   local function silent_send_context(opts)
     -- Use pcall to suppress errors
@@ -91,6 +100,7 @@ function M.setup(user_config)
   vim.api.nvim_create_user_command("ClaudeCodeSend", silent_send_context, { range = true, bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeReset", M.reset_instances, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeResetGit", M.reset_git_instance, { bang = true })
+  vim.api.nvim_create_user_command("ClaudeCodeDebug", M.toggle_debug, { bang = true })
   
   -- Set up keymapping using a Lua function callback for complete silence
   if config.get().keymap and config.get().keymap ~= "" then

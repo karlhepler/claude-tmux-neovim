@@ -4,6 +4,7 @@
 
 local M = {}
 local config = require('claude-tmux-neovim.lib.config')
+local util = require('claude-tmux-neovim.lib.util')
 
 --- Find all Claude Code instances in tmux
 ---@param git_root string The git repository root path
@@ -13,35 +14,67 @@ function M.get_claude_code_instances(git_root)
     return {}
   end
 
-  -- Find all tmux panes running Claude Code within the same git repo
+  -- First, get all panes with their info
   local cmd = string.format(
-    [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command}' | grep -i '%s' | grep -i '%s']], 
-    config.get().claude_code_cmd, 
-    git_root
+    [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command}']]
   )
+  
+  util.debug_log("Looking for Claude Code instances in git root: " .. git_root)
   
   local result = vim.fn.system(cmd)
   if vim.v.shell_error ~= 0 or result == "" then
+    util.debug_log("Failed to list tmux panes", vim.log.levels.WARN)
     return {}
   end
   
   local instances = {}
+  local claude_code_cmd = config.get().claude_code_cmd
+  
+  util.debug_log("Looking for command matching: " .. claude_code_cmd)
+  
+  -- Process all panes
   for line in result:gmatch("[^\r\n]+") do
     local pane_id, session, window_name, window_idx, pane_idx, command = 
       line:match("(%%[0-9]+) ([^ ]+) ([^ ]+) ([0-9]+) ([0-9]+) ([^ ]+)")
     
-    if pane_id then
-      table.insert(instances, {
-        pane_id = pane_id,
-        session = session,
-        window_name = window_name,
-        window_idx = window_idx,
-        pane_idx = pane_idx,
-        command = command,
-        display = string.format("%s: %s.%s (%s)", session, window_idx, pane_idx, window_name)
-      })
+    -- Log all matching commands for debugging
+    if command then
+      util.debug_log("Found pane with command: " .. command)
+    end
+    
+    -- Only consider panes that appear to be running Claude Code
+    if pane_id and command and command:match(claude_code_cmd) then
+      util.debug_log("Found potential Claude Code pane: " .. pane_id)
+      
+      -- Check if this pane's working directory is in the git repo
+      local check_cwd_cmd = string.format(
+        [[tmux display-message -p -t %s '#{pane_current_path}']], 
+        pane_id
+      )
+      
+      local pane_path = vim.fn.system(check_cwd_cmd):gsub("%s+$", "")
+      util.debug_log("Pane " .. pane_id .. " path: " .. pane_path)
+      util.debug_log("Comparing with git root: " .. git_root)
+      
+      -- Check if pane path is in the git repo (either exact match or subdirectory)
+      if pane_path == git_root or pane_path:match("^" .. vim.fn.escape(git_root, "%-%.%*%+%?%[%]%^%$%(%)%{%}%,%/") .. "/") then
+        util.debug_log("Found Claude Code pane in correct git repo: " .. pane_id)
+        table.insert(instances, {
+          pane_id = pane_id,
+          session = session,
+          window_name = window_name,
+          window_idx = window_idx,
+          pane_idx = pane_idx,
+          command = command,
+          display = string.format("%s: %s.%s (%s)", session, window_idx, pane_idx, window_name)
+        })
+      else
+        util.debug_log("Pane " .. pane_id .. " is not in the git repo - skipping")
+      end
     end
   end
+  
+  util.debug_log("Found " .. #instances .. " Claude Code instances in git repo")
   
   return instances
 end
