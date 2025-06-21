@@ -9,14 +9,15 @@ local default_config = {
   line_number_offset = 10, -- Adjust line number by adding this value (positive or negative)
   
   -- XML template for sending context (no additional prompt text or newlines)
+  -- Use CDATA sections to prevent potential XML parsing issues with content
   xml_template = [[
 <context>
   <file_path>%s</file_path>
   <git_root>%s</git_root>
   <line_number>%s</line_number>
   <column_number>%s</column_number>
-  <selection>%s</selection>
-  <file_content>%s</file_content>
+  <selection><![CDATA[%s]]></selection>
+  <file_content><![CDATA[%s]]></file_content>
 </context>]],
 }
 
@@ -95,9 +96,24 @@ local function get_visual_selection()
   return result
 end
 
--- Get current file's content
+-- Get current file's content with debug information
 local function get_file_content()
-  return table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), '\n')
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local content = table.concat(lines, '\n')
+  
+  -- Log basic file stats for debugging
+  vim.notify(string.format("File content: %d lines, %d characters", 
+                          #lines, #content), 
+            vim.log.levels.INFO)
+  
+  -- Log the first few lines for verification
+  if #lines > 0 then
+    local preview = table.concat({unpack(lines, 1, math.min(3, #lines))}, '\n')
+    vim.notify(string.format("First few lines: \n%s", preview),
+              vim.log.levels.INFO)
+  end
+  
+  return content
 end
 
 -- List all Claude Code instances in tmux
@@ -357,17 +373,17 @@ function M.send_context(opts)
     return
   end
   
-  -- Get cursor position with configurable offset for accurate line numbers
-  local buf_line_num = vim.api.nvim_win_get_cursor(0)[1]
-  local col_num = vim.api.nvim_win_get_cursor(0)[2] + 1  -- Column is 0-based, so add 1
+  -- Get cursor position directly from Neovim
+  local cursor_pos = vim.api.nvim_win_get_cursor(0)
+  local buf_line_num = cursor_pos[1]  -- 1-based line number
+  local col_num = cursor_pos[2] + 1  -- Convert 0-based column to 1-based
   
-  -- Apply the line number offset from config
-  local line_num = buf_line_num + config.line_number_offset
-  if line_num < 1 then line_num = 1 end
+  -- Don't adjust the line number at all - report exactly what Neovim says
+  local line_num = buf_line_num
   
-  -- Log the current cursor position for debugging
-  vim.notify(string.format("Line number: buffer reports %d, adjusted to %d with offset %d", 
-                         buf_line_num, line_num, config.line_number_offset), 
+  -- Log cursor position for debugging
+  vim.notify(string.format("Cursor position: line %d, column %d", 
+                         line_num, col_num), 
            vim.log.levels.INFO)
   
   -- Get selection (if range is provided)
@@ -375,22 +391,17 @@ function M.send_context(opts)
   
   -- Check if we have a range (visual selection)
   if opts and opts.range and opts.range > 0 then
-    -- Apply the same offset to the visual selection range
-    local adjusted_line1 = opts.line1 + config.line_number_offset
-    local adjusted_line2 = opts.line2 + config.line_number_offset
-    if adjusted_line1 < 1 then adjusted_line1 = 1 end
-    if adjusted_line2 < 1 then adjusted_line2 = 1 end
-    
-    vim.notify(string.format("Range: buffer reports %d-%d, adjusted to %d-%d with offset %d", 
-                            opts.line1, opts.line2, adjusted_line1, adjusted_line2, 
-                            config.line_number_offset), 
+    vim.notify(string.format("Visual selection range: lines %d-%d", 
+                           opts.line1, opts.line2), 
               vim.log.levels.INFO)
     
-    -- Use the original range for getting text content
+    -- Get the text from the specified range
     local lines = vim.api.nvim_buf_get_lines(0, opts.line1 - 1, opts.line2, false)
     if lines and #lines > 0 then
       selection = table.concat(lines, '\n')
-      vim.notify("Visual selection captured, length: " .. #selection, vim.log.levels.INFO)
+      vim.notify(string.format("Visual selection captured: %d lines, %d characters", 
+                             #lines, #selection), 
+                vim.log.levels.INFO)
     end
   else
     vim.notify("No range provided, sending whole file context", vim.log.levels.INFO)
