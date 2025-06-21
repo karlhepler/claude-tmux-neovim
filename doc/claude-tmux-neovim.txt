@@ -6,12 +6,13 @@ CONTENTS                                        *claude-tmux-neovim-contents*
     1. Introduction ................. |claude-tmux-neovim-introduction|
     2. Requirements ................. |claude-tmux-neovim-requirements|
     3. Installation ................. |claude-tmux-neovim-installation|
-    4. Configuration ................ |claude-tmux-neovim-configuration|
-    5. Usage ........................ |claude-tmux-neovim-usage|
-    6. Commands ..................... |claude-tmux-neovim-commands|
-    7. Keymaps ...................... |claude-tmux-neovim-keymaps|
-    8. XML Format ................... |claude-tmux-neovim-xml|
-    9. Tips ......................... |claude-tmux-neovim-tips|
+    4. Architecture ................. |claude-tmux-neovim-architecture|
+    5. Configuration ................ |claude-tmux-neovim-configuration|
+    6. Usage ........................ |claude-tmux-neovim-usage|
+    7. Commands ..................... |claude-tmux-neovim-commands|
+    8. Keymaps ...................... |claude-tmux-neovim-keymaps|
+    9. XML Format ................... |claude-tmux-neovim-xml|
+    10. Tips ........................ |claude-tmux-neovim-tips|
 
 ==============================================================================
 1. INTRODUCTION                              *claude-tmux-neovim-introduction*
@@ -46,7 +47,20 @@ vim.opt.rtp:prepend("~/github.com/karlhepler/claude-tmux-neovim")
 ```
 
 ==============================================================================
-4. CONFIGURATION                            *claude-tmux-neovim-configuration*
+4. ARCHITECTURE                              *claude-tmux-neovim-architecture*
+
+The plugin uses a modular architecture for maintainability and organization:
+
+- `init.lua` - Main entry point with public API
+- `lib/config.lua` - Configuration management and state tracking
+- `lib/util.lua` - Utility functions for file and text operations
+- `lib/tmux.lua` - Tmux interaction and Claude Code instance management
+- `lib/context.lua` - Context generation and XML formatting
+
+This modular design makes the codebase easier to understand, maintain, and extend.
+
+==============================================================================
+5. CONFIGURATION                            *claude-tmux-neovim-configuration*
 
 You can configure the plugin in your Neovim config:
 
@@ -60,7 +74,7 @@ require("claude-tmux-neovim").setup({
 ```
 
 ==============================================================================
-5. USAGE                                          *claude-tmux-neovim-usage*
+6. USAGE                                          *claude-tmux-neovim-usage*
 
 1. Press `<leader>cc` (or your configured keymap) in normal or visual mode.
 2. If multiple Claude Code instances are found in the same git repository,
@@ -70,7 +84,7 @@ require("claude-tmux-neovim").setup({
 Visual mode will include the selection in the XML context.
 
 ==============================================================================
-6. COMMANDS                                    *claude-tmux-neovim-commands*
+7. COMMANDS                                    *claude-tmux-neovim-commands*
 
 *:ClaudeCodeSend*
     Send the current file context to Claude Code.
@@ -82,7 +96,7 @@ Visual mode will include the selection in the XML context.
     Reset the remembered Claude Code instance for the current git repository.
 
 ==============================================================================
-7. KEYMAPS                                      *claude-tmux-neovim-keymaps*
+8. KEYMAPS                                      *claude-tmux-neovim-keymaps*
 
 By default, the plugin maps `<leader>cc` in both normal and visual mode to
 send context to Claude Code.
@@ -90,7 +104,7 @@ send context to Claude Code.
 You can change this by setting the `keymap` option in the setup function.
 
 ==============================================================================
-8. XML FORMAT                                      *claude-tmux-neovim-xml*
+9. XML FORMAT                                      *claude-tmux-neovim-xml*
 
 The plugin sends context to Claude Code in an XML format:
 
@@ -115,7 +129,7 @@ You can customize this format by setting the `xml_template` option in the
 setup function.
 
 ==============================================================================
-9. TIPS                                          *claude-tmux-neovim-tips*
+10. TIPS                                         *claude-tmux-neovim-tips*
 
 - Use `<leader>cc` in visual mode to send only selected code for review.
 - The plugin remembers your chosen Claude Code instance per git repository.

@@ -2,6 +2,16 @@
 
 A Neovim plugin that integrates with Claude Code via tmux, allowing you to send file context to Claude Code instances.
 
+## Architecture
+
+The plugin uses a modular architecture for maintainability:
+
+- `init.lua` - Main entry point with public API
+- `lib/config.lua` - Configuration management
+- `lib/util.lua` - Utility functions
+- `lib/tmux.lua` - Tmux interaction
+- `lib/context.lua` - Context generation and formatting
+
 ## Features
 
 - Press `<leader>cc` to send context to Claude Code
