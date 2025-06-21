@@ -32,18 +32,47 @@ selection, full content) to Claude Code instances running in tmux panes.
 ==============================================================================
 3. INSTALLATION                              *claude-tmux-neovim-installation*
 
-You can install the plugin manually by cloning the repository:
+Using a plugin manager is recommended for easier installation and updates.
 
+Plugin Manager Installation:
+
+lazy.nvim:
+```lua
+{
+  "karlhepler/claude-tmux-neovim",
+  config = function()
+    require("claude-tmux-neovim").setup({
+      -- your configuration
+    })
+  end,
+}
 ```
+
+packer.nvim:
+```lua
+use {
+  "karlhepler/claude-tmux-neovim",
+  config = function()
+    require("claude-tmux-neovim").setup()
+  end
+}
+```
+
+vim-plug:
+```vim
+Plug 'karlhepler/claude-tmux-neovim'
+```
+
+Manual installation by cloning the repository:
+```bash
 git clone https://github.com/karlhepler/claude-tmux-neovim.git \
   ~/.local/share/nvim/site/pack/plugins/start/claude-tmux-neovim
 ```
 
 Or add it to your runtime path manually in your Neovim config:
-
 ```lua
 -- Add the plugin to runtime path
-vim.opt.rtp:prepend("~/github.com/karlhepler/claude-tmux-neovim")
+vim.opt.rtp:prepend("~/path/to/claude-tmux-neovim")
 ```
 
 ==============================================================================
@@ -114,15 +143,9 @@ The plugin sends context to Claude Code in an XML format:
   <git_root>/path/to/project</git_root>
   <line_number>42</line_number>
   <column_number>15</column_number>
-  <selection>
-    selected_text_here
-  </selection>
-  <file_content>
-    full_file_content_here
-  </file_content>
+  <selection>selected_text_here</selection>
+  <file_content>full_file_content_here</file_content>
 </context>
-
-Please review this code context.
 ```
 
 You can customize this format by setting the `xml_template` option in the

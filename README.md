@@ -1,6 +1,15 @@
 # claude-tmux-neovim
 
-A Neovim plugin that integrates with Claude Code via tmux, allowing you to send file context to Claude Code instances.
+A Neovim plugin that seamlessly integrates with Claude Code via tmux, allowing you to send rich code context to Claude Code instances with a single keystroke.
+
+## Why use this plugin?
+
+- **Streamlined workflow**: Instantly send code context to Claude Code without leaving your editor
+- **Rich context sharing**: Automatically includes file path, git root, cursor position, and optional selections
+- **Seamless integration**: Works within your existing tmux sessions and git workflow
+- **Smart instance management**: Detects existing Claude Code instances or creates new ones as needed
+
+This plugin acts as a bridge between your Neovim editor and Claude Code running in tmux panes, enabling a smooth AI-assisted coding experience while maintaining your preferred environment.
 
 ## Architecture
 
@@ -33,6 +42,44 @@ The plugin uses a modular architecture for maintainability:
 
 ## Installation
 
+### Using a Plugin Manager (Recommended)
+
+#### [lazy.nvim](https://github.com/folke/lazy.nvim)
+
+```lua
+{
+  "karlhepler/claude-tmux-neovim",
+  config = function()
+    require("claude-tmux-neovim").setup({
+      -- your configuration
+    })
+  end,
+}
+```
+
+#### [packer.nvim](https://github.com/wbthomason/packer.nvim)
+
+```lua
+use {
+  "karlhepler/claude-tmux-neovim",
+  config = function()
+    require("claude-tmux-neovim").setup()
+  end
+}
+```
+
+#### [vim-plug](https://github.com/junegunn/vim-plug)
+
+```vim
+Plug 'karlhepler/claude-tmux-neovim'
+```
+
+Then in your Lua config:
+
+```lua
+require("claude-tmux-neovim").setup()
+```
+
 ### Manual Installation
 
 Clone the repository:
@@ -48,7 +95,7 @@ Add the plugin to your runtime path in your Neovim config:
 
 ```lua
 -- Add the plugin to runtime path
-vim.opt.rtp:prepend("~/github.com/karlhepler/claude-tmux-neovim")
+vim.opt.rtp:prepend("~/path/to/claude-tmux-neovim")
 ```
 
 ## Configuration
@@ -63,6 +110,18 @@ require("claude-tmux-neovim").setup({
   remember_choice = true,          -- Remember instance per git repo
 })
 ```
+
+## How It Works
+
+The plugin creates a seamless workflow between Neovim and Claude Code running in tmux:
+
+1. When triggered, the plugin captures your current code context (file path, git root, cursor position, and optionally selected code)
+2. It uses tmux commands to detect any existing Claude Code instances in the same git repository
+3. If no instances exist, it creates a new tmux window running Claude Code
+4. The context is formatted as structured XML and sent to the Claude Code instance via tmux
+5. If configured, your tmux focus automatically switches to the Claude Code pane for immediate interaction
+
+This approach keeps both environments running independently while creating an efficient bridge between them.
 
 ## Usage
 
@@ -88,15 +147,9 @@ The plugin sends context to Claude Code in an XML format:
   <git_root>/path/to/project</git_root>
   <line_number>42</line_number>
   <column_number>15</column_number>
-  <selection>
-    selected_text_here
-  </selection>
-  <file_content>
-    full_file_content_here
-  </file_content>
+  <selection>selected_text_here</selection>
+  <file_content>full_file_content_here</file_content>
 </context>
-
-Please review this code context.
 ```
 
 ## License
