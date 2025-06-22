@@ -410,43 +410,49 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Get more detailed content for each instance
     for i, instance in ipairs(instances) do
-      -- Get content from pane and create a concise 4-5 word summary
+      -- Get content from pane to send to Claude for summarization
       local preview_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 3", 
+        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 20", 
         instance.pane_id
       )
       local content = vim.fn.system(preview_cmd)
       content = vim.trim(content)
       
-      -- Generate a concise 4-5 word summary
-      local summary = ""
+      -- Generate an AI summary using Claude with --print flag
+      local summary = "(Empty pane)"
+      
       if content ~= "" then
-        -- Try to extract first sentence or key phrase
-        local first_line = content:match("^[^\n]+")
-        if first_line then
-          -- Extract first 4-5 words
-          local words = {}
-          for word in first_line:gmatch("%S+") do
-            table.insert(words, word)
-            if #words >= 5 then
-              break
-            end
-          end
+        -- Prepare prompt for Claude
+        local prompt = string.format(
+          "Summarize the following text in 4-5 words only. Just provide the summary with no additional text:\n\n%s", 
+          content
+        )
+        
+        -- Create a temporary file for the prompt
+        local temp_file = os.tmpname()
+        local file = io.open(temp_file, "w")
+        if file then
+          file:write(prompt)
+          file:close()
           
-          -- Create summary from words (up to 5)
-          if #words > 0 then
-            summary = table.concat(words, " ")
-            if #words < 5 and content:find("\n") then
-              -- If we have fewer than 5 words and more content, add "..."
-              summary = summary .. "..."
-            end
+          -- Run Claude with --print flag to get a summary
+          local claude_cmd = string.format(
+            "%s --print < %s 2>/dev/null", 
+            config.get().claude_code_cmd, 
+            temp_file
+          )
+          
+          local claude_summary = vim.fn.system(claude_cmd)
+          os.remove(temp_file)
+          
+          -- Clean up the summary
+          claude_summary = vim.trim(claude_summary)
+          
+          -- If we got a valid summary, use it
+          if claude_summary ~= "" then
+            summary = claude_summary
           end
         end
-      end
-      
-      -- Default if we couldn't create a summary
-      if summary == "" then
-        summary = "(Empty pane)"
       end
       
       -- Format for display - truncate if too long
