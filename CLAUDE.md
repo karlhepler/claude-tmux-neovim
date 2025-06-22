@@ -32,6 +32,7 @@ The plugin uses a modular architecture:
    - Uses sophisticated pane tracking to ensure reliable operation
    - Implements retry mechanisms for tmux operations that might fail initially
    - Verifies created panes actually exist before attempting to use them
+   - Shows an animated loading indicator during Claude instance startup
 5. The context is formatted as structured XML and sent to the Claude Code instance via tmux
    - Uses tmux buffers for reliable pasting
    - Includes retry logic for paste operations
@@ -81,3 +82,4 @@ The debug log is stored at: `vim.fn.stdpath('cache') .. '/claude-tmux-neovim-deb
 7. Test new features with both `<leader>cc` and `<leader>cn` commands
 8. Ensure all tmux operations include proper error handling and debugging
 9. When modifying tmux interaction code, test across different tmux sessions and window configurations
+10. When adding visual elements (like loading indicators), ensure they work consistently across different terminal types

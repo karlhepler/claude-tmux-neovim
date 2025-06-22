@@ -29,6 +29,7 @@ This plugin acts as a bridge between your Neovim editor and Claude Code running 
 - Automatically reloads Neovim buffers when focus returns from Claude Code
 - Sends rich context in XML format optimized for LLMs
 - Comprehensive debug mode for troubleshooting with detailed logging
+- Animated loading indicator during Claude Code instance startup
 
 ## Requirements
 
@@ -127,7 +128,10 @@ The plugin creates a seamless workflow between Neovim and Claude Code running in
    - Implements retry mechanisms for tmux operations that might fail initially
    - Verifies created panes actually exist before attempting to use them
    - Includes fallback methods if the primary approach encounters issues
+   - Shows an animated loading indicator during Claude instance startup
 5. The context is formatted as structured XML and sent to the Claude Code instance via tmux
+   - Uses tmux buffers for reliable pasting
+   - Includes retry logic for paste operations
 6. If configured, your tmux focus automatically switches to the Claude Code pane for immediate interaction
    - Employs a multi-step approach to ensure reliable window and pane selection
    - Includes verification and fallback mechanisms for window switching
