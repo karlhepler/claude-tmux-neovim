@@ -119,6 +119,10 @@ function M.get_claude_code_instances(git_root)
       debug.log("Checking if path '" .. pane_path .. "' is exactly the git root '" .. git_root .. "'")
       
       -- Only include panes that are exactly in the git root directory
+      debug.log("Comparing pane_path: '" .. pane_path .. "' with git_root: '" .. git_root .. "'")
+      debug.log("String comparison result: " .. tostring(pane_path == git_root))
+      
+      -- Very strict exact match check
       if pane_path == git_root then
         debug.log("Found Claude Code pane in exact git root: " .. pane_id)
         
@@ -522,15 +526,29 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Process each instance for the menu
     for i, instance in ipairs(instances) do
-      -- Get window info using tmux command
-      local window_info_cmd = string.format(
-        "tmux display-message -t %s -p '#{window_name}'",
+      -- Get more detailed pane info using tmux command
+      local pane_info_cmd = string.format(
+        "tmux display-message -t %s -p '#{window_name}|#{pane_title}|#{pane_current_command}|#{pane_current_path}'",
         instance.pane_id
       )
-      local window_name = vim.fn.system(window_info_cmd):gsub("%s+$", "")
+      local pane_info = vim.fn.system(pane_info_cmd):gsub("%s+$", "")
       
-      -- Default display name is the window name
-      local display_name = window_name
+      -- Parse the info
+      local window_name, pane_title, pane_cmd, pane_path = pane_info:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+      
+      -- Determine the best name to use
+      local best_name = pane_title
+      if not best_name or best_name == "" then
+        best_name = window_name
+      end
+      
+      -- Add command info if helpful
+      if pane_cmd and pane_cmd ~= "" and pane_cmd ~= "node" then
+        best_name = best_name .. " (" .. pane_cmd .. ")"
+      end
+      
+      -- Default display name is the best name we could find
+      local display_name = best_name or "Claude"
       
       -- Try to read AI summary
       if summary_results[i] then
