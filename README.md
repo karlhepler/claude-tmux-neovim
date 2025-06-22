@@ -20,7 +20,8 @@ This plugin acts as a bridge between your Neovim editor and Claude Code running 
 - Git repository isolation - only shows Claude Code instances in the same git repository
 - Smart instance management:
   - Detects existing Claude Code instances in the correct git root with strict verification
-  - Shows detection method in selection menu ([cmd], [node], [content], [proc], etc.)
+  - Shows detection method in selection menu ([cmd], [node], [prompt], [renamed], etc.)
+  - Automatically renames tmux windows to "claude" for consistency
   - Creates new instances if none exist
   - Remembers choice per git repository
 - Automatically switches to Claude Code pane after sending context

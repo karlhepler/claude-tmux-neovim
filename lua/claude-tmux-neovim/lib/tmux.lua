@@ -7,6 +7,32 @@ local config = require('claude-tmux-neovim.lib.config')
 local util = require('claude-tmux-neovim.lib.util')
 local debug = require('claude-tmux-neovim.lib.debug')
 
+--- Rename a tmux window to "claude" if it's running Claude Code but has a different name
+---@param pane_id string The tmux pane ID
+---@param session string The tmux session name
+---@param window_idx string The tmux window index
+---@param window_name string The current window name
+function M.rename_to_claude_if_needed(pane_id, session, window_idx, window_name)
+  -- Only rename if the window name is not already "claude"
+  if window_name:lower() ~= "claude" then
+    -- First check if this is actually Claude with the prompt line check
+    local content_cmd = string.format(
+      "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
+      pane_id
+    )
+    local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+    
+    -- If it has the Claude prompt, rename the window
+    if content_check and content_check ~= "" then
+      debug.log("Renaming window from '" .. window_name .. "' to 'claude' for consistency")
+      local rename_cmd = string.format("tmux rename-window -t %s:%s claude", session, window_idx)
+      vim.fn.system(rename_cmd)
+      return true
+    end
+  end
+  return false
+end
+
 --- Find all Claude Code instances in tmux
 ---@param git_root string The git repository root path
 ---@return table[] instances Array of Claude Code instances
@@ -174,6 +200,12 @@ function M.get_claude_code_instances(git_root)
         -- Only proceed if this is actually Claude
         if is_actually_claude then
           debug.log("Confirmed Claude Code pane in exact git root: " .. pane_id)
+          
+          -- Rename the window to "claude" if needed for consistency
+          local was_renamed = M.rename_to_claude_if_needed(pane_id, session, window_idx, window_name)
+          if was_renamed then
+            window_name = "claude" -- Update the window name if it was renamed
+          end
         
           -- Step 5: Add it to our instances list with priority flag
           local is_current_session = (session == current_session)
@@ -182,7 +214,9 @@ function M.get_claude_code_instances(git_root)
           local detection_method = ""
           
           -- First, identify initial detection method
-          if command == claude_code_cmd then
+          if was_renamed then
+            detection_method = "[renamed]"
+          elseif command == claude_code_cmd then
             detection_method = "[cmd]"
           elseif command:match("/" .. claude_code_cmd .. "$") then
             detection_method = "[path]"
@@ -355,14 +389,23 @@ function M.get_claude_code_instances(git_root)
           
           -- Only add if we're confident it's actually Claude
           if is_actually_claude then
+            -- Rename the window to "claude" if needed for consistency
+            local was_renamed = M.rename_to_claude_if_needed(pane_id, session, window_idx, window_name)
+            if was_renamed then
+              window_name = "claude" -- Update the window name if it was renamed
+            end
+            
             -- Add as a Claude Code instance
             local is_current_session = (session == current_session)
             
             -- Determine detection method based on which verification passed
             local detection_method = "[auto]"
             
+            -- Check if the window was renamed
+            if was_renamed then
+              detection_method = "[renamed]"
             -- Check if window name was the verification method
-            if window_name:lower():match("claude") then
+            elseif window_name:lower():match("claude") then
               detection_method = "[name]"
             end
             
