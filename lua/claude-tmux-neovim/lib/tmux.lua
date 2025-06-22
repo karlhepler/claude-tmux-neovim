@@ -387,8 +387,8 @@ function M.get_claude_code_instances(git_root)
             end
           end
           
-          -- Only add if we're confident it's actually Claude
-          if is_actually_claude then
+          -- Only add if we're confident it's actually Claude and not Neovim or another editor
+          if is_actually_claude and command ~= "nvim" and command ~= "vim" and command ~= "vi" then
             -- Rename the window to "claude" if needed for consistency
             local was_renamed = M.rename_to_claude_if_needed(pane_id, session, window_idx, window_name)
             if was_renamed then
