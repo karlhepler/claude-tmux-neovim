@@ -513,8 +513,8 @@ function M.create_claude_code_instance(git_root, ...)
   end
   
   -- Create a new window for Claude Code
-  -- Use a consistent window name to help with detection
-  local window_name = "claude"
+  -- Use a consistent window name to help with detection, but add loading indicator
+  local window_name = "claude [loading...]"
   debug.log("Creating new Claude window with command: " .. claude_cmd)
   
   -- Create the new window and capture its index immediately
@@ -534,7 +534,14 @@ function M.create_claude_code_instance(git_root, ...)
   debug.log("Successfully created new window with index: " .. new_window_idx)
   
   -- Give it time to start - increased from 0.5 to 2.0 seconds for slow Claude initialization
-  vim.fn.system("sleep 2.0")
+  -- Use animated loading indicator to show progress
+  for i = 1, 4 do
+    local indicators = { "⣾", "⣽", "⣻", "⢿" }
+    local loading_title = string.format("claude [loading %s]", indicators[i])
+    vim.fn.system(string.format("tmux rename-window -t %s:%s '%s'", 
+                             current_session, new_window_idx, loading_title))
+    vim.fn.system("sleep 0.5")
+  end
   
   -- Verify the window still exists and has expected name
   local verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:' | grep '%s'", 
@@ -557,6 +564,10 @@ function M.create_claude_code_instance(git_root, ...)
   else
     debug.log("Successfully verified window exists with correct name")
   end
+  
+  -- Now that Claude is ready, update the window name to the final state
+  vim.fn.system(string.format("tmux rename-window -t %s:%s 'claude'", 
+                           current_session, new_window_idx))
   
   -- Get the pane ID
   local pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id},#{pane_active},#{pane_current_command}'", 
