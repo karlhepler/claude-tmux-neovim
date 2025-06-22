@@ -164,16 +164,20 @@ All configuration options:
 ==============================================================================
 6. USAGE                                          *claude-tmux-neovim-usage*
 
-1. Press `<leader>cc` (or your configured keymap) in normal or visual mode.
-2. If multiple Claude Code instances are found in the same git repository,
-   you'll be prompted to select one from a clear table view showing session,
-   window, pane, detection method, and content preview.
-3. The plugin sends the file context to Claude Code and switches to that pane.
-4. After interacting with Claude Code, when you switch back to Neovim, your
+1. Press `<leader>cc` (or your configured keymap) in normal or visual mode
+   to send context to an existing Claude Code instance.
+2. Press `<leader>cn` (or your configured keymap_new) in normal or visual mode
+   to create a new Claude Code instance and send context to it.
+3. If multiple Claude Code instances are found in the same git repository when
+   using `<leader>cc`, you'll be prompted to select one from a clear table view
+   showing session, window, pane, detection method, and content preview.
+4. The plugin sends the file context to Claude Code and switches to that pane.
+5. After interacting with Claude Code, when you switch back to Neovim, your
    buffers will automatically reload to reflect any changes.
 
 In visual mode, only your selected code will be included in the XML context,
-helping Claude Code focus on the specific portion you need help with.
+helping Claude Code focus on the specific portion you need help with. This
+works for both `<leader>cc` and `<leader>cn`.
 
 ==============================================================================
 7. COMMANDS                                    *claude-tmux-neovim-commands*
@@ -207,7 +211,7 @@ helping Claude Code focus on the specific portion you need help with.
 
 The plugin provides the following default keymaps:
 - `<leader>cc` in both normal and visual mode to send context to Claude Code
-- `<leader>cn` in normal mode to create a new Claude Code instance
+- `<leader>cn` in both normal and visual mode to create a new Claude Code instance
 
 You can change these by setting the `keymap` and `keymap_new` options in the setup function:
 
@@ -299,6 +303,7 @@ The debug log is stored at:
 12. TIPS                                         *claude-tmux-neovim-tips*
 
 - Use `<leader>cc` in visual mode to send only selected code for review.
+- Use `<leader>cn` in visual mode to create a new Claude instance with only selected code.
 - The plugin remembers your chosen Claude Code instance per git repository.
 - If no Claude Code instances are found, a new one will be created.
 - You can reset remembered instances with `:ClaudeCodeReset`.

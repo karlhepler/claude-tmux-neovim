@@ -129,12 +129,13 @@ This approach keeps both environments running independently while creating an ef
 
 ## Usage
 
-1. Press `<leader>cc` (or your configured keymap) in normal or visual mode.
-2. If multiple Claude Code instances are found in the same git repository, you'll be prompted to select one.
-3. The plugin sends the file context to Claude Code and switches to that pane.
-4. After interacting with Claude Code, when you switch back to Neovim, your buffers will automatically reload to reflect any changes.
+1. Press `<leader>cc` (or your configured keymap) in normal or visual mode to send context to an existing Claude Code instance.
+2. Press `<leader>cn` (or your configured keymap_new) in normal or visual mode to create a new Claude Code instance and send context to it.
+3. If multiple Claude Code instances are found in the same git repository when using `<leader>cc`, you'll be prompted to select one.
+4. The plugin sends the file context to Claude Code and switches to that pane.
+5. After interacting with Claude Code, when you switch back to Neovim, your buffers will automatically reload to reflect any changes.
 
-In visual mode, only your selected code will be included in the XML context, helping Claude Code focus on the specific portion you need help with.
+In visual mode, only your selected code will be included in the XML context, helping Claude Code focus on the specific portion you need help with. This works for both `<leader>cc` and `<leader>cn`.
 
 ## Commands
 

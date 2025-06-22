@@ -197,8 +197,14 @@ function M.setup(user_config)
   
   -- Set up create new instance keymap
   if config.get().keymap_new and config.get().keymap_new ~= "" then
+    -- Normal mode - create new Claude instance
     vim.api.nvim_set_keymap('n', config.get().keymap_new,
-      [[<cmd>lua require('claude-tmux-neovim').create_new_instance()<CR>]],
+      [[<cmd>lua require('claude-tmux-neovim.lib.silent').create_new_normal()<CR>]],
+      { noremap = true, silent = true })
+    
+    -- Visual mode - create new Claude instance with visual selection
+    vim.api.nvim_set_keymap('x', config.get().keymap_new,
+      [[<ESC>:lua require('claude-tmux-neovim.lib.silent').create_new_visual()<CR>]],
       { noremap = true, silent = true })
   end
 end
