@@ -33,18 +33,23 @@ maintaining your preferred environment.
 
 - Send code context to Claude Code with a single keystroke (`<leader>cc`)
 - Create new Claude Code instances and send context with a dedicated shortcut (`<leader>cn`)
-- Works with visual selections for more targeted assistance
+- Works with visual selections for more targeted assistance in both normal and visual modes
 - Git repository isolation - only shows Claude Code instances in the same repo
 - Smart instance management:
   - Detects existing Claude Code instances in the correct git root with strict verification
   - Shows detection method in selection menu ([cmd], [node], [prompt], [renamed], etc.)
   - Automatically renames tmux windows to "claude" for consistency
-  - Creates new instances if none exist
+  - Creates new instances if none exist with robust pane tracking
+  - Includes retry mechanisms for tmux operations that might fail initially
+  - Verifies created panes actually exist before attempting to use them
+  - Provides fallback methods if the primary approach encounters issues
   - Remembers choice per git repository
 - Automatically switches to Claude Code pane after sending context
+  - Uses multi-step approach to ensure reliable window and pane selection
+  - Includes verification and fallback mechanisms for window switching
 - Automatically reloads Neovim buffers when focus returns from Claude Code
 - Sends rich context in XML format optimized for LLMs
-- Debug mode for troubleshooting with detailed logging
+- Comprehensive debug mode for troubleshooting with detailed logging
 
 ==============================================================================
 3. REQUIREMENTS                              *claude-tmux-neovim-requirements*
@@ -299,13 +304,33 @@ more detailed information:
 The debug log is stored at:
 `vim.fn.stdpath('cache') .. '/claude-tmux-neovim-debug.log'`
 
+The plugin includes extensive error handling and debugging information. When
+debugging issues, look for these key log entries:
+
+- Window and pane creation logs - Shows details about new Claude instances
+- Pane verification steps - Confirms panes exist before using them
+- Window selection operations - Details about switching to Claude panes
+- Paste operation logs - Information about sending context to Claude
+- Retry attempts - For operations that may need multiple attempts
+- Fallback mechanisms - Alternative approaches when primary methods fail
+
+Common issues and their solutions:
+- If Claude instances aren't detected properly, ensure tmux windows with Claude are
+  named "claude" or try using `:ClaudeCodeDebug` to see detection details
+- If paste operations fail, check if the target pane is still active and receiving input
+- If window switching doesn't work, try manually switching to the Claude window first
+- For new instance creation issues, enable debug mode and check for any errors
+  during window creation or pane selection
+- If your instance is not found, the plugin may not recognize it in the git root;
+  try using `:ClaudeCodeReset` to clear remembered instances
+
 ==============================================================================
 12. TIPS                                         *claude-tmux-neovim-tips*
 
 - Use `<leader>cc` in visual mode to send only selected code for review.
 - Use `<leader>cn` in visual mode to create a new Claude instance with only selected code.
 - The plugin remembers your chosen Claude Code instance per git repository.
-- If no Claude Code instances are found, a new one will be created.
+- If no Claude Code instances are found, a new one will be created automatically.
 - You can reset remembered instances with `:ClaudeCodeReset`.
 - For multi-project workflows, the plugin isolates instances by git repository.
 - If Claude Code makes changes to your files, they'll be automatically reloaded
@@ -317,11 +342,21 @@ The debug log is stored at:
   - [prompt]: Claude Code identified by distinctive prompt line (╭────╮ with │ > below it)
   - [proc]: Identified through process command line or environment variables
   - [name]: Identified by window name containing "claude"
+  - [renamed]: Window was automatically renamed to "claude" for consistency
   - [other]: Other detection method
   - [auto]: Found by aggressive fallback detection
   - [new]: Newly created instance
-- When troubleshooting issues with detection of Claude Code instances, try
-  enabling debug mode and checking the log.
+- For reliable operation, the plugin now includes:
+  - Automatic retries for paste operations that might fail initially
+  - Verification that panes exist before attempting to use them
+  - Fallback mechanisms if the primary approach encounters issues
+  - Enhanced window and pane selection to ensure reliable switching
+- If the plugin seems stuck during instance creation, try running `:ClaudeCodeDebug`
+  to enable detailed logging and then view it with `:ClaudeCodeShowLog`.
+- The plugin now automatically renames tmux windows running Claude to "claude" for
+  consistent detection and easier identification.
+- If you encounter any issues with instance creation or detection, the debug logs
+  contain detailed information about each step of the process.
 
 ==============================================================================
 vim:tw=78:ts=8:ft=help:norl:

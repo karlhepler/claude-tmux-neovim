@@ -16,18 +16,19 @@ This plugin acts as a bridge between your Neovim editor and Claude Code running 
 
 - Press `<leader>cc` to send context to Claude Code (uses `claude --continue` when auto-creating instances)
 - Press `<leader>cn` to create a new Claude Code instance and send context (always uses plain `claude` without flags)
-- Works with visual selections for more targeted assistance
+- Works with visual selections for more targeted assistance in both normal and visual modes
 - Git repository isolation - only shows Claude Code instances in the same git repository
 - Smart instance management:
   - Detects existing Claude Code instances in the correct git root with strict verification
   - Shows detection method in selection menu ([cmd], [node], [prompt], [renamed], etc.)
   - Automatically renames tmux windows to "claude" for consistency
-  - Creates new instances if none exist
+  - Creates new instances if none exist with robust pane tracking
   - Remembers choice per git repository
-- Automatically switches to Claude Code pane after sending context
+  - Automatic retry mechanisms for tmux operations
+- Automatically switches to Claude Code pane after sending context with fallback mechanisms
 - Automatically reloads Neovim buffers when focus returns from Claude Code
 - Sends rich context in XML format optimized for LLMs
-- Debug mode for troubleshooting with detailed logging
+- Comprehensive debug mode for troubleshooting with detailed logging
 
 ## Requirements
 
@@ -119,13 +120,20 @@ The plugin creates a seamless workflow between Neovim and Claude Code running in
    - Performs strict verification to ensure only actual Claude Code instances are detected
    - Uses multiple detection methods including command name, process information, and pane content
    - Shows detection method in the selection menu for transparency
+   - Automatically renames windows running Claude to "claude" for consistent identification
 3. If multiple instances exist, a clean table-formatted selection menu is presented
 4. If no instances exist, it creates a new tmux window running Claude Code
+   - Uses sophisticated pane tracking to ensure reliable operation
+   - Implements retry mechanisms for tmux operations that might fail initially
+   - Verifies created panes actually exist before attempting to use them
+   - Includes fallback methods if the primary approach encounters issues
 5. The context is formatted as structured XML and sent to the Claude Code instance via tmux
 6. If configured, your tmux focus automatically switches to the Claude Code pane for immediate interaction
+   - Employs a multi-step approach to ensure reliable window and pane selection
+   - Includes verification and fallback mechanisms for window switching
 7. When you return to Neovim (FocusGained event), all buffers are automatically reloaded to reflect any changes made by Claude Code
 
-This approach keeps both environments running independently while creating an efficient bridge between them.
+This approach keeps both environments running independently while creating an efficient bridge between them, with extensive error handling and fallback mechanisms to ensure reliable operation.
 
 ## Usage
 

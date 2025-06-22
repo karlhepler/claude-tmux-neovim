@@ -22,10 +22,23 @@ The plugin uses a modular architecture:
 
 1. When triggered, the plugin captures code context (file path, git root, cursor position, and optionally selected code)
 2. It uses tmux commands to detect existing Claude Code instances in the same git repository
-3. If no instances exist, it creates a new tmux window running Claude Code
-4. The context is formatted as structured XML and sent to the Claude Code instance via tmux
-5. If configured, focus automatically switches to the Claude Code pane
-6. When returning to Neovim, buffers are automatically reloaded to reflect any changes
+   - Uses multiple detection methods including command name, process information, and pane content
+   - Verifies each potential Claude instance with strict checks
+   - Automatically renames windows running Claude to "claude" for consistent identification
+3. If multiple instances exist, a clean table-formatted selection menu is presented
+4. If no instances exist, it creates a new tmux window running Claude Code
+   - `<leader>cc` creates instances with the `--continue` flag
+   - `<leader>cn` creates instances without any flags (clean Claude instances)
+   - Uses sophisticated pane tracking to ensure reliable operation
+   - Implements retry mechanisms for tmux operations that might fail initially
+   - Verifies created panes actually exist before attempting to use them
+5. The context is formatted as structured XML and sent to the Claude Code instance via tmux
+   - Uses tmux buffers for reliable pasting
+   - Includes retry logic for paste operations
+6. If configured, focus automatically switches to the Claude Code pane
+   - Uses a multi-step approach to ensure reliable window and pane selection
+   - Includes verification and fallback mechanisms for window switching
+7. When returning to Neovim, buffers are automatically reloaded to reflect any changes
 
 ## Development Commands
 
@@ -60,3 +73,11 @@ The debug log is stored at: `vim.fn.stdpath('cache') .. '/claude-tmux-neovim-deb
 3. Ensure backward compatibility with existing configurations
 4. Verify compatibility with different tmux versions and configurations
 5. Test with both normal and visual mode selection
+6. Always include robust error handling and fallback mechanisms:
+   - Verify panes and windows exist before attempting to use them
+   - Include retry logic for operations that might fail initially
+   - Provide informative debug logging for troubleshooting
+   - Implement fallback approaches when primary methods fail
+7. Test new features with both `<leader>cc` and `<leader>cn` commands
+8. Ensure all tmux operations include proper error handling and debugging
+9. When modifying tmux interaction code, test across different tmux sessions and window configurations
