@@ -363,7 +363,22 @@ function M.with_claude_code_instance(git_root, callback)
     -- Let user choose from multiple instances with a cleaner UI
     local choices = {}
     for i, instance in ipairs(instances) do
-      table.insert(choices, string.format("%d. %s", i, instance.display))
+      -- Capture a brief preview of the pane content (first few visible lines)
+      local preview_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 3 | tr '\n' ' ' | cut -c 1-60", instance.pane_id)
+      local preview = vim.fn.system(preview_cmd)
+      preview = vim.trim(preview)
+      
+      -- Limit preview length and add ellipsis if needed
+      if #preview > 40 then
+        preview = string.sub(preview, 1, 40) .. "..."
+      end
+      
+      -- Add a brief preview to the display string
+      if preview ~= "" then
+        table.insert(choices, string.format("%d. %s - \"%s\"", i, instance.display, preview))
+      else
+        table.insert(choices, string.format("%d. %s", i, instance.display))
+      end
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
