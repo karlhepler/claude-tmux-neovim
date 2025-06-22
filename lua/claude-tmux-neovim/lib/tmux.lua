@@ -602,6 +602,8 @@ function M.send_to_claude_code(instance, context)
     return false
   end
   
+  debug.log("Sending context to Claude instance: " .. vim.inspect(instance))
+  
   -- For new instances, add a brief delay to ensure Claude is ready to accept input
   if instance.detection_method == "[new]" then
     debug.log("New instance detected, adding extra delay to ensure readiness")
@@ -638,6 +640,8 @@ function M.send_to_claude_code(instance, context)
   local verify_cmd = string.format("tmux has-session -t %s 2>/dev/null && echo exists || echo missing", 
                                   instance.pane_id)
   local pane_exists = vim.trim(vim.fn.system(verify_cmd))
+  
+  debug.log("Verifying pane existence: " .. pane_exists .. " for pane " .. instance.pane_id)
   
   if pane_exists ~= "exists" then
     debug.log("WARNING: Pane " .. instance.pane_id .. " doesn't exist before paste! Trying to find by window index")

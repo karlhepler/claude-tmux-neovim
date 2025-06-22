@@ -9,14 +9,20 @@ local debug_file = vim.fn.stdpath('cache') .. '/claude-tmux-neovim-debug.log'
 
 --- Initialize debug log file
 function M.init()
-  if vim.g.claude_tmux_neovim_debug then
-    -- Clear the log file at initialization
-    local file = io.open(debug_file, "w")
-    if file then
-      file:write("Claude-tmux-neovim debug log started at " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n")
-      file:write("---------------------------------------------------\n\n")
-      file:close()
-    end
+  -- Force enable debug temporarily for troubleshooting
+  vim.g.claude_tmux_neovim_debug = true
+  
+  -- Clear the log file at initialization
+  local file = io.open(debug_file, "w")
+  if file then
+    file:write("Claude-tmux-neovim debug log started at " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n")
+    file:write("---------------------------------------------------\n\n")
+    file:close()
+    
+    -- Show notification about debug log location
+    vim.schedule(function()
+      vim.notify("Debug log enabled at: " .. debug_file, vim.log.levels.INFO)
+    end)
   end
 end
 
