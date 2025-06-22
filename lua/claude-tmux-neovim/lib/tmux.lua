@@ -438,8 +438,8 @@ function M.with_claude_code_instance(git_root, callback)
       local temp_file = os.tmpname()
       local file = io.open(temp_file, "w")
       if file then
-        -- Very simple prompt that will be fast to process
-        file:write("Describe this in 5 words: " .. pane_content)
+        -- Very strict prompt that forces brevity
+        file:write("Describe this content in exactly 5 words maximum. Your entire response must be 5 words or fewer - not a single word more. This is critically important: " .. pane_content)
         file:close()
         temp_files[i] = temp_file
         
@@ -458,7 +458,7 @@ function M.with_claude_code_instance(git_root, callback)
           -- Background process with timeout
           script:write("(timeout " .. summary_timeout .. " " .. 
                       config.get().claude_code_cmd .. 
-                      " --print --system-prompt \"Only output 5 words max.\" < " .. 
+                      " --print --system-prompt \"You must respond with exactly 5 words maximum, never more. Be extremely concise.\" < " .. 
                       temp_file .. " > " .. output_file .. " 2>/dev/null) & \n")
           script:write("PID=$!\n")
           
@@ -543,7 +543,18 @@ function M.with_claude_code_instance(git_root, callback)
             -- Clean up the summary
             summary = summary:gsub("^%s+", ""):gsub("%s+$", "")
             
-            -- Truncate if too long
+            -- Ensure we only have 5 words maximum
+            local words = {}
+            for word in summary:gmatch("%S+") do
+              table.insert(words, word)
+              if #words >= 5 then break end
+            end
+            
+            if #words > 0 then
+              summary = table.concat(words, " ")
+            end
+            
+            -- Truncate if still too long
             if #summary > 40 then
               summary = string.sub(summary, 1, 37) .. "..."
             end
