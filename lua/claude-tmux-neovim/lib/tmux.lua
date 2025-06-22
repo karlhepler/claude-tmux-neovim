@@ -417,50 +417,89 @@ function M.with_claude_code_instance(git_root, callback)
     -- Create a menu with instance summaries
     local menu_items = {"Select Claude Code instance:"}
     
-    -- Get more detailed content for each instance
+    -- First, capture content from all panes in parallel
+    local instance_contents = {}
+    local content_files = {}
+    local summary_files = {}
+    
+    -- Prepare all content captures in parallel
     for i, instance in ipairs(instances) do
-      -- Get content from pane to send to Claude for summarization
+      -- Get content from pane
       local preview_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 20", 
+        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", 
         instance.pane_id
       )
       local content = vim.fn.system(preview_cmd)
       content = vim.trim(content)
       
-      -- Generate an AI summary using Claude with --print flag
-      local summary = "(Empty pane)"
+      -- Store content for this instance
+      instance_contents[i] = content
       
+      -- If content exists, prepare for summarization
       if content ~= "" then
-        -- Prepare prompt for Claude
-        local prompt = string.format(
-          "Summarize the following text in 4-5 words only. Just provide the summary with no additional text:\n\n%s", 
-          content
-        )
-        
-        -- Create a temporary file for the prompt
+        -- Create a file for each instance's content
         local temp_file = os.tmpname()
         local file = io.open(temp_file, "w")
         if file then
+          -- Simplified prompt for speed - ask for an extremely concise summary
+          local prompt = "Summarize in 4-5 words: " .. content
           file:write(prompt)
           file:close()
+          content_files[i] = temp_file
           
-          -- Run Claude with --print flag to get a summary
-          local claude_cmd = string.format(
-            "%s --print < %s 2>/dev/null", 
-            config.get().claude_code_cmd, 
-            temp_file
-          )
-          
-          local claude_summary = vim.fn.system(claude_cmd)
-          os.remove(temp_file)
-          
-          -- Clean up the summary
-          claude_summary = vim.trim(claude_summary)
-          
-          -- If we got a valid summary, use it
-          if claude_summary ~= "" then
-            summary = claude_summary
+          -- Create a file for the summary output
+          summary_files[i] = os.tmpname()
+        end
+      end
+    end
+    
+    -- Run all summarization commands in parallel using background processes
+    local summary_processes = {}
+    for i, content_file in pairs(content_files) do
+      if content_file and summary_files[i] then
+        -- Fast summarization using background process and system prompt for speed
+        local claude_cmd = string.format(
+          "%s --print --system-prompt \"You provide extremely concise 4-5 word summaries. No explanation.\" < %s > %s 2>/dev/null &", 
+          config.get().claude_code_cmd,
+          content_file,
+          summary_files[i]
+        )
+        
+        -- Run in background
+        vim.fn.system(claude_cmd)
+      end
+    end
+    
+    -- Small delay to allow processes to complete (can be adjusted)
+    vim.fn.system("sleep 0.2")
+    
+    -- Collect results and build menu items
+    for i, instance in ipairs(instances) do
+      local summary = "(Empty pane)"
+      
+      -- Try to read from summary file if it exists
+      if summary_files[i] then
+        local file = io.open(summary_files[i], "r")
+        if file then
+          local content = file:read("*all")
+          file:close()
+          if content and content ~= "" then
+            summary = vim.trim(content)
           end
+        end
+      end
+      
+      -- If no summary from Claude, create a simple one from the content
+      if summary == "(Empty pane)" and instance_contents[i] and instance_contents[i] ~= "" then
+        -- Extract first few words as fallback
+        local first_line = instance_contents[i]:match("^[^\n]+") or ""
+        local words = {}
+        for word in first_line:gmatch("%S+") do
+          table.insert(words, word)
+          if #words >= 5 then break end
+        end
+        if #words > 0 then
+          summary = table.concat(words, " ")
         end
       end
       
@@ -475,6 +514,14 @@ function M.with_claude_code_instance(git_root, callback)
       
       -- Add a concise summary line for this instance
       table.insert(menu_items, string.format("%d. [%s] %s", i, location, summary))
+    end
+    
+    -- Clean up all temporary files
+    for _, file in pairs(content_files) do
+      os.remove(file)
+    end
+    for _, file in pairs(summary_files) do
+      os.remove(file)
     end
     
     -- Add option to create a new instance
