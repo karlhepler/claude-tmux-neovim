@@ -382,46 +382,61 @@ function M.with_claude_code_instance(git_root, callback)
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Use vim.ui.select with proper scheduling to avoid the "Press Enter" prompt
+    -- Use a more direct approach with separate UI and response handling
+    
+    -- Store shorter descriptions to avoid "Press Enter" prompt
+    local short_choices = {}
+    for i, instance in ipairs(instances) do
+      -- Keep the display much shorter
+      local session = instance.session
+      local window_pane = instance.window_idx .. "." .. instance.pane_idx
+      
+      -- Capture a brief prefix of the pane content (first few words only)
+      local preview_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 1 | cut -c 1-20", instance.pane_id)
+      local preview = vim.fn.system(preview_cmd)
+      preview = vim.trim(preview)
+      
+      -- Format shorter display string
+      if preview ~= "" then
+        short_choices[i] = string.format("%d: %s %s \"%s\"", i, session, window_pane, preview)
+      else
+        short_choices[i] = string.format("%d: %s %s", i, session, window_pane)
+      end
+    end
+    
+    -- Add new instance option
+    short_choices[#instances + 1] = string.format("%d: Create new instance", #instances + 1)
+    
+    -- Manual popup using vim.fn.inputlist
     vim.schedule(function()
-      -- Temporarily set cmdheight to avoid the "Press Enter" prompt
-      local old_cmdheight = vim.o.cmdheight
-      vim.o.cmdheight = 2
+      -- Save more information to make selection command silent
+      local more = vim.o.more
+      vim.o.more = false
       
-      -- Clear command line before showing UI
-      vim.cmd("echo ''")
+      -- Show a simple input list (no "Press Enter" prompt)
+      local choice_idx = vim.fn.inputlist({"Select Claude Code instance:"})
       
-      vim.ui.select(choices, {
-        prompt = "Select Claude Code instance:",
-        format_item = function(item) return item end,
-      }, function(choice)
-        -- Restore original cmdheight immediately
-        vim.o.cmdheight = old_cmdheight
-        
-        -- Clear command line immediately
-        vim.cmd("echo ''")
-        vim.cmd("redraw")
-        
-        if not choice then return end
-        
-        local idx = tonumber(choice:match("^(%d+)%."))
-        if idx and idx <= #instances then
-          -- Use selected instance
-          if config.get().remember_choice then
-            config.set_remembered_instance(git_root, instances[idx])
-          end
-          -- Process the selection immediately, not in a new tick
-          callback(instances[idx])
-        elseif idx == #instances + 1 then
-          -- Create new instance
-          local new_instance = M.create_claude_code_instance(git_root)
-          if new_instance and config.get().remember_choice then
-            config.set_remembered_instance(git_root, new_instance)
-          end
-          -- Process the new instance immediately
-          callback(new_instance)
+      -- Restore 'more' option
+      vim.o.more = more
+      
+      -- Process selection - ensure index is valid
+      if choice_idx >= 1 and choice_idx <= #instances then
+        -- Use selected instance
+        if config.get().remember_choice then
+          config.set_remembered_instance(git_root, instances[choice_idx])
         end
-      end)
+        callback(instances[choice_idx])
+      elseif choice_idx == #instances + 1 then
+        -- Create new instance
+        local new_instance = M.create_claude_code_instance(git_root)
+        if new_instance and config.get().remember_choice then
+          config.set_remembered_instance(git_root, new_instance)
+        end
+        callback(new_instance)
+      end
+      
+      -- Force redraw to clear any messages
+      vim.cmd("redraw!")
     end)
   end
 end

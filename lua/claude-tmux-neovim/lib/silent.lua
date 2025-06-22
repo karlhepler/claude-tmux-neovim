@@ -13,9 +13,9 @@ function M.send_normal()
     main.send_context({})
   end)
   
-  -- Clear command line and force redraw to prevent "Press Enter" prompt
+  -- Clear all command line output and force redraw to prevent "Press Enter" prompt
   vim.cmd("echo ''")
-  vim.cmd("redraw")
+  vim.cmd("redraw!")  -- Using redraw! is more aggressive than redraw
 end
 
 --- Get selected text in visual mode
@@ -99,7 +99,7 @@ function M.send_visual()
   
   -- Clear command line, force redraw, and exit visual mode
   vim.cmd("echo ''")
-  vim.cmd("redraw")
+  vim.cmd("redraw!")  -- Using redraw! is more aggressive than redraw
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
 end
 
