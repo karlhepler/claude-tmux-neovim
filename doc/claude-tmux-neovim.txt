@@ -115,7 +115,6 @@ You can configure the plugin in your Neovim config:
 require("claude-tmux-neovim").setup({
   keymap = "<leader>cc",           -- Key binding for trigger
   keymap_new = "<leader>cn",       -- Key binding for new instance
-  claude_code_cmd = "claude --continue", -- Command to start Claude Code
   auto_switch_pane = true,         -- Auto switch to Claude pane
   remember_choice = true,          -- Remember instance per git repo
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns
@@ -144,9 +143,9 @@ All configuration options:
     The key mapping to create a new Claude Code instance.
     Default: "<leader>cn"
 
-`claude_code_cmd` (string) 
-    The command used to start Claude Code.
-    Default: "claude --continue"
+    Note: 
+    - `<leader>cc` creates new Claude instances with "claude --continue" 
+    - `<leader>cn` creates new Claude instances with "claude" (no flags)
 
 `auto_switch_pane` (boolean)
     Whether to automatically switch to the Claude Code pane after sending context.

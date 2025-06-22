@@ -27,8 +27,9 @@ The plugin uses a modular architecture:
    - Automatically renames windows running Claude to "claude" for consistent identification
 3. If multiple instances exist, a clean table-formatted selection menu is presented
 4. If no instances exist, it creates a new tmux window running Claude Code
-   - `<leader>cc` creates instances with the `--continue` flag
-   - `<leader>cn` creates instances without any flags (clean Claude instances)
+   - `<leader>cc` always creates instances with the `--continue` flag (hardcoded behavior)
+   - `<leader>cn` always creates instances without any flags (clean Claude instances)
+   - The `claude_code_cmd` config option is only used for detecting existing Claude instances, not for creating new ones
    - Uses sophisticated pane tracking to ensure reliable operation
    - Implements retry mechanisms for tmux operations that might fail initially
    - Verifies created panes actually exist before attempting to use them

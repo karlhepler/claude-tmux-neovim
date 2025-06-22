@@ -104,13 +104,16 @@ Add this to your Neovim config:
 require("claude-tmux-neovim").setup({
   keymap = "<leader>cc",           -- Key binding for sending context
   keymap_new = "<leader>cn",       -- Key binding for creating new Claude instance
-  claude_code_cmd = "claude --continue", -- Command to start Claude Code (with continue flag)
   auto_switch_pane = true,         -- Auto switch to Claude pane
   remember_choice = true,          -- Remember instance per git repo
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns to Neovim
   debug = false,                   -- Enable debug logging
 })
 ```
+
+Note: 
+- `<leader>cc` creates new Claude instances with "claude --continue" 
+- `<leader>cn` creates new Claude instances with "claude" (no flags)
 
 ## How It Works
 
