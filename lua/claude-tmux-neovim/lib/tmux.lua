@@ -89,13 +89,12 @@ function M.get_claude_code_instances(git_root)
           
           if content:lower():match("claude") or 
              content:match("anthropic") or 
-             content:match("You are Claude") then
+             content:match("You are Claude") or
+             content:match("Human:") then
             debug.log("Pane content suggests Claude Code")
             is_claude = true
-          -- If the Node.js process is in the git repo root, it might be Claude Code
-          elseif pane_path == git_root then
-            debug.log("Node.js process is in git repo root, likely Claude Code")
-            is_claude = true
+          -- REMOVED: Don't assume Node.js in git root is Claude Code
+          -- This was causing false positives
           end
         end
       end
@@ -107,7 +106,8 @@ function M.get_claude_code_instances(git_root)
       
       if content:lower():match("claude") or 
          content:match("anthropic") or 
-         content:match("You are Claude") then
+         content:match("You are Claude") or
+         content:match("Human:") then
         debug.log("Pane content suggests Claude Code despite command: " .. command)
         is_claude = true
       end
@@ -122,22 +122,124 @@ function M.get_claude_code_instances(git_root)
       debug.log("Comparing pane_path: '" .. pane_path .. "' with git_root: '" .. git_root .. "'")
       debug.log("String comparison result: " .. tostring(pane_path == git_root))
       
-      -- Very strict exact match check
+      -- Very strict exact match check for both git root AND Claude Code
       if pane_path == git_root then
-        debug.log("Found Claude Code pane in exact git root: " .. pane_id)
+        debug.log("Found pane in exact git root: " .. pane_id)
         
-        -- Step 5: Add it to our instances list with priority flag
-        local is_current_session = (session == current_session)
-        table.insert(instances, {
-          pane_id = pane_id,
-          session = session,
-          window_name = window_name,
-          window_idx = window_idx,
-          pane_idx = pane_idx,
-          command = command,
-          is_current_session = is_current_session,
-          display = string.format("%s: %s.%s (%s)", session, window_idx, pane_idx, window_name)
-        })
+        -- Double-check that this is actually Claude Code
+        local is_actually_claude = false
+        
+        -- Verify it's Claude by checking pane content for Claude markers
+        local content_check_cmd = string.format(
+          "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human' -e 'anthropic' -e 'You are Claude'", 
+          pane_id
+        )
+        local content_check = vim.fn.system(content_check_cmd):gsub("%s+$", "")
+        if content_check and content_check ~= "" then
+          is_actually_claude = true
+          debug.log("Confirmed Claude Code by content: " .. pane_id)
+        end
+        
+        -- More thorough process checking with ps
+        -- First, check full command line (including arguments) for claude markers
+        local process_cmd = string.format(
+          "ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", 
+          pane_id
+        )
+        local process_check = vim.fn.system(process_cmd):gsub("%s+$", "")
+        debug.log("Process command line: " .. process_check)
+        
+        if process_check:lower():match("claude") or 
+           process_check:match("anthropic") then
+          is_actually_claude = true
+          debug.log("Confirmed Claude Code by process command: " .. pane_id)
+        end
+        
+        -- Also check process environment for Claude-specific variables (more reliable)
+        if not is_actually_claude then
+          local env_cmd = string.format(
+            "ps -o command= -e -p $(tmux display-message -p -t %s '#{pane_pid}') 2>/dev/null | grep -e 'CLAUDE\\|ANTHROPIC'", 
+            pane_id
+          )
+          local env_check = vim.fn.system(env_cmd):gsub("%s+$", "")
+          if env_check and env_check ~= "" then
+            is_actually_claude = true
+            debug.log("Confirmed Claude Code by process environment: " .. pane_id)
+          end
+        end
+        
+        -- Check parent processes for Claude indicators
+        if not is_actually_claude then
+          -- Get process tree for this pane
+          local pstree_cmd = string.format(
+            "pstree -p $(tmux display-message -p -t %s '#{pane_pid}') 2>/dev/null | grep -e claude -e anthropic", 
+            pane_id
+          )
+          local pstree_check = vim.fn.system(pstree_cmd):gsub("%s+$", "")
+          if pstree_check and pstree_check ~= "" then
+            is_actually_claude = true
+            debug.log("Confirmed Claude Code by process tree: " .. pane_id)
+          end
+        end
+        
+        -- Only proceed if this is actually Claude
+        if is_actually_claude then
+          debug.log("Confirmed Claude Code pane in exact git root: " .. pane_id)
+        
+          -- Step 5: Add it to our instances list with priority flag
+          local is_current_session = (session == current_session)
+          
+          -- Add detection method to help identify how we found this instance
+          local detection_method = ""
+          
+          -- First, identify initial detection method
+          if command == claude_code_cmd then
+            detection_method = "[cmd]"
+          elseif command:match("/" .. claude_code_cmd .. "$") then
+            detection_method = "[path]"
+          elseif command == "node" or command == "node.js" or command:match("node") then
+            detection_method = "[node]"
+          else
+            detection_method = "[other]"
+          end
+          
+          -- Then check which verification passed to prioritize that
+          if is_actually_claude then
+            -- If we verified with content, show that (most reliable)
+            local content_cmd = string.format(
+              "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human:' -e 'anthropic' -e 'You are Claude'", 
+              pane_id
+            )
+            local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+            if content_check and content_check ~= "" then
+              detection_method = "[content]"
+            end
+            
+            -- Or if we verified with process details
+            local process_cmd = string.format(
+              "ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}') | grep -e claude", 
+              pane_id
+            )
+            local process_check = vim.fn.system(process_cmd):gsub("%s+$", "")
+            if process_check and process_check ~= "" then
+              detection_method = "[proc]"
+            end
+          end
+          
+          table.insert(instances, {
+            pane_id = pane_id,
+            session = session,
+            window_name = window_name,
+            window_idx = window_idx,
+            pane_idx = pane_idx,
+            command = command,
+            is_current_session = is_current_session,
+            detection_method = detection_method,
+            display = string.format("%s: %s.%s (%s) %s", session, window_idx, pane_idx, window_name, detection_method)
+          })
+        else
+          debug.log("Pane " .. pane_id .. " is in git root but not running Claude - skipping")
+        end
       else
         debug.log("Pane " .. pane_id .. " is not in the exact git root - skipping")
       end
@@ -159,7 +261,7 @@ function M.get_claude_code_instances(git_root)
   
   debug.log("Found " .. #instances .. " Claude Code instances in git repo")
   
-  -- If no instances found, try a more aggressive approach - look for ANY node process in the git repo
+  -- If no instances found, try a more aggressive approach - look for ANY process in the git repo with Claude markers
   if #instances == 0 then
     debug.log("No Claude Code instances found with standard methods, trying aggressive fallback")
     
@@ -169,19 +271,110 @@ function M.get_claude_code_instances(git_root)
       
       if pane_id and command and pane_path then
         -- Check if this pane is EXACTLY in the git repo root (not a subdirectory)
-        if pane_path == git_root and command == "node" then
-          -- Additional verification: check if pane content suggests Claude
-          local content_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", pane_id)
-          local content = vim.fn.system(content_cmd)
+        if pane_path == git_root then
+          debug.log("AGGRESSIVE MODE: Checking pane in git root: " .. pane_id .. " with command: " .. command)
           
-          if content:lower():match("claude") or 
-             content:match("anthropic") or 
-             content:match("You are Claude") then
-             
-            debug.log("AGGRESSIVE MODE: Found Node.js process in git repo root with Claude content: " .. pane_id)
+          -- Double-check that this is actually Claude Code using multiple verification methods
+          local is_actually_claude = false
+          
+          -- Method 1: Check window name for Claude indicators
+          if window_name:lower():match("claude") then
+            is_actually_claude = true
+            debug.log("AGGRESSIVE MODE: Window name contains 'claude': " .. window_name)
+          end
+          
+          -- Method 2: Thorough content check for Claude markers
+          if not is_actually_claude then
+            local content_cmd = string.format(
+              "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human:' -e 'anthropic' -e 'You are Claude'", 
+              pane_id
+            )
+            local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+            if content_check and content_check ~= "" then
+              is_actually_claude = true
+              debug.log("AGGRESSIVE MODE: Found Claude content markers: " .. pane_id)
+            end
+          end
+          
+          -- Method 3: Enhanced process detection
+          if not is_actually_claude then
+            -- Check full command line (including arguments) for claude markers
+            local process_cmd = string.format(
+              "ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", 
+              pane_id
+            )
+            local process_check = vim.fn.system(process_cmd):gsub("%s+$", "")
+            debug.log("AGGRESSIVE MODE: Process command line: " .. process_check)
             
+            if process_check:lower():match("claude") or 
+               process_check:match("anthropic") then
+              is_actually_claude = true
+              debug.log("AGGRESSIVE MODE: Confirmed Claude Code by process command: " .. pane_id)
+            end
+          end
+          
+          -- Method 4: Check process environment for Claude-specific variables
+          if not is_actually_claude then
+            local env_cmd = string.format(
+              "ps -o command= -e -p $(tmux display-message -p -t %s '#{pane_pid}') 2>/dev/null | grep -e 'CLAUDE\\|ANTHROPIC'", 
+              pane_id
+            )
+            local env_check = vim.fn.system(env_cmd):gsub("%s+$", "")
+            if env_check and env_check ~= "" then
+              is_actually_claude = true
+              debug.log("AGGRESSIVE MODE: Confirmed Claude Code by process environment: " .. pane_id)
+            end
+          end
+          
+          -- Method 5: Check parent processes for Claude indicators
+          if not is_actually_claude then
+            -- Get process tree for this pane
+            local pstree_cmd = string.format(
+              "pstree -p $(tmux display-message -p -t %s '#{pane_pid}') 2>/dev/null | grep -e claude -e anthropic", 
+              pane_id
+            )
+            local pstree_check = vim.fn.system(pstree_cmd):gsub("%s+$", "")
+            if pstree_check and pstree_check ~= "" then
+              is_actually_claude = true
+              debug.log("AGGRESSIVE MODE: Confirmed Claude Code by process tree: " .. pane_id)
+            end
+          end
+          
+          -- Only add if we're confident it's actually Claude
+          if is_actually_claude then
             -- Add as a Claude Code instance
             local is_current_session = (session == current_session)
+            
+            -- Determine detection method based on which verification passed
+            local detection_method = "[auto]"
+            
+            -- Check if window name was the verification method
+            if window_name:lower():match("claude") then
+              detection_method = "[name]"
+            end
+            
+            -- Check if we found it through process detection methods
+            local process_cmd = string.format(
+              "ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", 
+              pane_id
+            )
+            local process_check = vim.fn.system(process_cmd):gsub("%s+$", "")
+            
+            if process_check:lower():match("claude") or 
+               process_check:match("anthropic") then
+              detection_method = "[proc]"
+            end
+            
+            -- Content detection gets priority since it's most reliable
+            local content_cmd = string.format(
+              "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human:' -e 'anthropic' -e 'You are Claude'", 
+              pane_id
+            )
+            local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+            if content_check and content_check ~= "" then
+              detection_method = "[content]"
+            end
+            
             table.insert(instances, {
               pane_id = pane_id,
               session = session,
@@ -190,8 +383,12 @@ function M.get_claude_code_instances(git_root)
               pane_idx = pane_idx,
               command = command,
               is_current_session = is_current_session,
-              display = string.format("%s: %s.%s (%s) [Auto-detected]", session, window_idx, pane_idx, window_name)
+              detection_method = detection_method,
+              display = string.format("%s: %s.%s (%s) %s", session, window_idx, pane_idx, window_name, detection_method)
             })
+            debug.log("AGGRESSIVE MODE: Added Claude instance: " .. pane_id)
+          else
+            debug.log("AGGRESSIVE MODE: Pane " .. pane_id .. " is in git root but not running Claude - skipping")
           end
         end
       end
@@ -261,7 +458,8 @@ function M.create_claude_code_instance(git_root)
     window_idx = new_window_idx,
     pane_idx = "0",
     command = config.get().claude_code_cmd,
-    display = string.format("%s: %s.0 (claude-code)", current_session, new_window_idx)
+    detection_method = "[new]",
+    display = string.format("%s: %s.0 (claude-code) [new]", current_session, new_window_idx)
   }
 end
 
@@ -423,8 +621,8 @@ function M.with_claude_code_instance(git_root, callback)
     local menu_items = {"Select Claude Code instance:"}
     
     -- Table dimensions and formatting
-    local table_width = 80
-    local col_widths = {3, 12, 8, 6, 45}  -- Adjust column widths here
+    local table_width = 90
+    local col_widths = {3, 12, 8, 6, 10, 45}  -- Adjust column widths here
     
     -- Create horizontal separator line
     local function make_separator()
@@ -440,8 +638,8 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Add header row
     local header = string.format("| %-" .. (col_widths[1]-1) .. "s | %-" .. (col_widths[2]-1) .. "s | %-" .. 
-                                (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s |",
-                                "#", "Session", "Window", "Pane", "Description")
+                                (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s | %-" .. (col_widths[6]-1) .. "s |",
+                                "#", "Session", "Window", "Pane", "Type", "Description")
     table.insert(menu_items, header)
     
     -- Add separator after header
@@ -503,11 +701,12 @@ function M.with_claude_code_instance(git_root, callback)
       
       -- Format as a nice table row
       local row = string.format("| %-" .. (col_widths[1]-1) .. "d | %-" .. (col_widths[2]-1) .. "s | %-" .. 
-                               (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s |",
+                               (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s | %-" .. (col_widths[6]-1) .. "s |",
                                i, 
                                instance.session, 
                                "W:" .. instance.window_idx, 
                                "P:" .. instance.pane_idx,
+                               instance.detection_method or "[unknown]",
                                display_name)
       
       table.insert(menu_items, row)

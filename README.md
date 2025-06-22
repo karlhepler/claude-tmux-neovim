@@ -18,7 +18,8 @@ This plugin acts as a bridge between your Neovim editor and Claude Code running 
 - Works with visual selections for more targeted assistance
 - Git repository isolation - only shows Claude Code instances in the same git repository
 - Smart instance management:
-  - Detects existing Claude Code instances in the correct git root
+  - Detects existing Claude Code instances in the correct git root with strict verification
+  - Shows detection method in selection menu ([cmd], [node], [content], [proc], etc.)
   - Creates new instances if none exist
   - Remembers choice per git repository
 - Automatically switches to Claude Code pane after sending context
@@ -112,10 +113,14 @@ The plugin creates a seamless workflow between Neovim and Claude Code running in
 
 1. When triggered, the plugin captures your current code context (file path, git root, cursor position, and optionally selected code)
 2. It uses tmux commands to detect any existing Claude Code instances in the same git repository
-3. If no instances exist, it creates a new tmux window running Claude Code
-4. The context is formatted as structured XML and sent to the Claude Code instance via tmux
-5. If configured, your tmux focus automatically switches to the Claude Code pane for immediate interaction
-6. When you return to Neovim (FocusGained event), all buffers are automatically reloaded to reflect any changes made by Claude Code
+   - Performs strict verification to ensure only actual Claude Code instances are detected
+   - Uses multiple detection methods including command name, process information, and pane content
+   - Shows detection method in the selection menu for transparency
+3. If multiple instances exist, a clean table-formatted selection menu is presented
+4. If no instances exist, it creates a new tmux window running Claude Code
+5. The context is formatted as structured XML and sent to the Claude Code instance via tmux
+6. If configured, your tmux focus automatically switches to the Claude Code pane for immediate interaction
+7. When you return to Neovim (FocusGained event), all buffers are automatically reloaded to reflect any changes made by Claude Code
 
 This approach keeps both environments running independently while creating an efficient bridge between them.
 

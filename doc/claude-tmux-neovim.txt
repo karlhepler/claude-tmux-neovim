@@ -35,7 +35,8 @@ maintaining your preferred environment.
 - Works with visual selections for more targeted assistance
 - Git repository isolation - only shows Claude Code instances in the same repo
 - Smart instance management:
-  - Detects existing Claude Code instances in the correct git root
+  - Detects existing Claude Code instances in the correct git root with strict verification
+  - Shows detection method in selection menu ([cmd], [node], [content], etc.)
   - Creates new instances if none exist
   - Remembers choice per git repository
 - Automatically switches to Claude Code pane after sending context
@@ -159,7 +160,8 @@ All configuration options:
 
 1. Press `<leader>cc` (or your configured keymap) in normal or visual mode.
 2. If multiple Claude Code instances are found in the same git repository,
-   you'll be prompted to select one.
+   you'll be prompted to select one from a clear table view showing session,
+   window, pane, detection method, and content preview.
 3. The plugin sends the file context to Claude Code and switches to that pane.
 4. After interacting with Claude Code, when you switch back to Neovim, your
    buffers will automatically reload to reflect any changes.
@@ -293,6 +295,16 @@ The debug log is stored at:
 - For multi-project workflows, the plugin isolates instances by git repository.
 - If Claude Code makes changes to your files, they'll be automatically reloaded
   when you return to Neovim. You can also manually reload with `:ClaudeCodeReload`.
+- Detection methods in the selection menu help you identify how Claude instances were found:
+  - [cmd]: Direct match with the Claude Code command name
+  - [path]: Path-based match with the Claude Code command
+  - [node]: Node.js process running Claude Code
+  - [content]: Claude Code identified by content markers (Human/Claude conversation)
+  - [proc]: Identified through process command line or environment variables
+  - [name]: Identified by window name containing "claude"
+  - [other]: Other detection method
+  - [auto]: Found by aggressive fallback detection
+  - [new]: Newly created instance
 - When troubleshooting issues with detection of Claude Code instances, try
   enabling debug mode and checking the log.
 
