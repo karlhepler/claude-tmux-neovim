@@ -14,7 +14,49 @@ local config = require('claude-tmux-neovim.lib.config')
 function M.send_normal()
   -- Use pcall to suppress any errors
   pcall(function()
-    main.send_context({})
+    -- First check if we have any Claude instances
+    local git_root = util.get_git_root()
+    if not git_root then
+      debug.log("Not in a git repository")
+      return
+    end
+    
+    -- Create context payload (do this first to ensure we have valid content to send)
+    local context_data = context.create_context({})
+    if not context_data then
+      debug.log("Failed to create context data")
+      return
+    end
+    
+    -- Format context as XML
+    local xml = context.format_context_xml(context_data)
+    
+    -- Check if we need to create a new instance with --continue flag
+    local instances = tmux.get_claude_code_instances(git_root)
+    if #instances == 0 then
+      debug.log("No existing Claude instances found. Creating a new one with --continue flag directly")
+      
+      -- Create a new instance with the --continue flag
+      local new_instance = tmux.create_claude_code_instance(git_root, true)
+      
+      if new_instance then
+        debug.log("Successfully created new Claude instance with --continue flag")
+        
+        -- Set as remembered instance if created successfully
+        if config.get().remember_choice then
+          config.set_remembered_instance(git_root, new_instance)
+        end
+        
+        -- Send to the new Claude Code instance
+        tmux.send_to_claude_code(new_instance, xml)
+      else
+        debug.log("Failed to create new Claude instance with --continue flag")
+      end
+    else
+      debug.log("Found existing Claude instances, using normal send_context flow")
+      -- Use the normal send_context flow if instances already exist
+      main.send_context({})
+    end
   end)
   
   -- Clear all command line output and force redraw to prevent "Press Enter" prompt
@@ -78,24 +120,56 @@ function M.send_visual()
   
   -- Use pcall to suppress any errors
   pcall(function()
-    -- Create a custom context and send it
-    local context_data = require('claude-tmux-neovim.lib.context').create_context({
+    -- Create a custom context with the visual selection
+    local context_data = context.create_context({
       range = 1,
       line1 = start_line,
       line2 = end_line,
       selection_text = selection -- Pass the actual yanked text
     })
     
-    if context_data then
-      debug.log("Sending context with selection: " .. (context_data.selection or ""))
+    if not context_data then
+      debug.log("Failed to create context data")
+      return
+    end
+    
+    local git_root = context_data.git_root
+    if not git_root then
+      debug.log("Not in a git repository")
+      return
+    end
+    
+    -- Format the context as XML
+    local xml = context.format_context_xml(context_data)
+    debug.log("Sending context with selection: " .. (context_data.selection or ""))
+    
+    -- Check if we need to create a new instance with --continue flag
+    local instances = tmux.get_claude_code_instances(git_root)
+    if #instances == 0 then
+      debug.log("No existing Claude instances found. Creating a new one with --continue flag directly")
       
-      -- Format and send the context
-      local xml = require('claude-tmux-neovim.lib.context').format_context_xml(context_data)
-      local git_root = context_data.git_root
+      -- Create a new instance with the --continue flag
+      local new_instance = tmux.create_claude_code_instance(git_root, true)
       
-      require('claude-tmux-neovim.lib.tmux').with_claude_code_instance(git_root, function(instance)
+      if new_instance then
+        debug.log("Successfully created new Claude instance with --continue flag")
+        
+        -- Set as remembered instance if created successfully
+        if config.get().remember_choice then
+          config.set_remembered_instance(git_root, new_instance)
+        end
+        
+        -- Send to the new Claude Code instance
+        tmux.send_to_claude_code(new_instance, xml)
+      else
+        debug.log("Failed to create new Claude instance with --continue flag")
+      end
+    else
+      debug.log("Found existing Claude instances, using with_claude_code_instance flow")
+      -- Use existing instances if they're available
+      tmux.with_claude_code_instance(git_root, function(instance)
         if instance then
-          require('claude-tmux-neovim.lib.tmux').send_to_claude_code(instance, xml)
+          tmux.send_to_claude_code(instance, xml)
         end
       end)
     end
