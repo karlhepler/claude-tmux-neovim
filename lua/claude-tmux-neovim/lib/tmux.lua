@@ -487,9 +487,9 @@ end
 
 --- Create a new Claude Code instance in a new tmux window
 ---@param git_root string The git repository root path
----@param use_continue boolean|nil Whether to use the full command with flags (for continue mode)
+---@param ... string Additional arguments to pass to the Claude CLI
 ---@return table|nil instance The new Claude Code instance or nil if failed
-function M.create_claude_code_instance(git_root, use_continue)
+function M.create_claude_code_instance(git_root, ...)
   if not git_root then
     vim.notify("Not in a git repository", vim.log.levels.ERROR)
     return nil
@@ -499,17 +499,16 @@ function M.create_claude_code_instance(git_root, use_continue)
   local current_session = vim.fn.system("tmux display-message -p '#{session_name}'")
   current_session = vim.trim(current_session)
   
-  -- Choose the appropriate command based on the use_continue flag
-  local claude_cmd
-  if use_continue then
-    -- For automatic instance creation (when sending context and no instance exists)
-    -- use the full command with flags
-    claude_cmd = config.get().claude_code_cmd
-    debug.log("Using Claude command with continue flag: " .. claude_cmd)
+  -- Build the claude command with any additional arguments
+  local claude_args = {...}
+  local base_cmd = "claude"
+  local claude_cmd = base_cmd
+  
+  -- Add any additional arguments
+  if #claude_args > 0 then
+    claude_cmd = base_cmd .. " " .. table.concat(claude_args, " ")
+    debug.log("Using Claude command with args: " .. claude_cmd)
   else
-    -- For explicit new instance creation (via <leader>cn or :ClaudeCodeNew)
-    -- use just "claude" without any flags
-    claude_cmd = "claude"
     debug.log("Using Claude command without flags: " .. claude_cmd)
   end
   
@@ -814,8 +813,8 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Create new instance silently if none found using claude --continue flag
     -- When creating via get_claude_code_instances, we want to use the full command with flags
-    -- The parameter should be true to use the --continue flag
-    local new_instance = M.create_claude_code_instance(git_root, true) -- Pass true to indicate using the full command
+    -- Pass --continue flag for automatic instance creation
+    local new_instance = M.create_claude_code_instance(git_root, "--continue")
     
     -- If creation fails, verify we're actually passing the correct command 
     if not new_instance then

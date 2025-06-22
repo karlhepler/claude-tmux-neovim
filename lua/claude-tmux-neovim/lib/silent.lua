@@ -37,7 +37,7 @@ function M.send_normal()
       debug.log("No existing Claude instances found. Creating a new one with --continue flag directly")
       
       -- Create a new instance with the --continue flag
-      local new_instance = tmux.create_claude_code_instance(git_root, true)
+      local new_instance = tmux.create_claude_code_instance(git_root, "--continue")
       
       if new_instance then
         debug.log("Successfully created new Claude instance with --continue flag")
@@ -149,7 +149,7 @@ function M.send_visual()
       debug.log("No existing Claude instances found. Creating a new one with --continue flag directly")
       
       -- Create a new instance with the --continue flag
-      local new_instance = tmux.create_claude_code_instance(git_root, true)
+      local new_instance = tmux.create_claude_code_instance(git_root, "--continue")
       
       if new_instance then
         debug.log("Successfully created new Claude instance with --continue flag")
@@ -203,7 +203,7 @@ function M.create_new_normal()
     local xml = context.format_context_xml(context_data)
     
     -- Create a new Claude instance with plain "claude" command (no flags)
-    local new_instance = tmux.create_claude_code_instance(git_root, false)
+    local new_instance = tmux.create_claude_code_instance(git_root)
     
     -- Send context to the new instance and switch to it
     if new_instance then
@@ -268,7 +268,7 @@ function M.create_new_visual()
     local xml = context.format_context_xml(context_data)
     
     -- Create a new Claude instance with plain "claude" command (no flags)
-    local new_instance = tmux.create_claude_code_instance(git_root, false)
+    local new_instance = tmux.create_claude_code_instance(git_root)
     
     -- Set as remembered instance if created successfully
     if new_instance and config.get().remember_choice then
