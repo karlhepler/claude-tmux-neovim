@@ -113,14 +113,14 @@ function M.get_claude_code_instances(git_root)
       end
     end
     
-    -- Step 4: If it's a Claude Code pane, check if it's in the correct git repo
+    -- Step 4: If it's a Claude Code pane, check if it's EXACTLY in the git root
     if is_claude then
       debug.log("Found potential Claude Code pane: " .. pane_id)
-      debug.log("Checking if path '" .. pane_path .. "' is in git root '" .. git_root .. "'")
+      debug.log("Checking if path '" .. pane_path .. "' is exactly the git root '" .. git_root .. "'")
       
-      -- Check if pane path is in the git repo (either exact match or subdirectory)
-      if pane_path == git_root or pane_path:match("^" .. vim.fn.escape(git_root, "%-%.%*%+%?%[%]%^%$%(%)%{%}%,%/") .. "/") then
-        debug.log("Found Claude Code pane in correct git repo: " .. pane_id)
+      -- Only include panes that are exactly in the git root directory
+      if pane_path == git_root then
+        debug.log("Found Claude Code pane in exact git root: " .. pane_id)
         
         -- Step 5: Add it to our instances list with priority flag
         local is_current_session = (session == current_session)
@@ -135,7 +135,7 @@ function M.get_claude_code_instances(git_root)
           display = string.format("%s: %s.%s (%s)", session, window_idx, pane_idx, window_name)
         })
       else
-        debug.log("Pane " .. pane_id .. " is not in the git repo - skipping")
+        debug.log("Pane " .. pane_id .. " is not in the exact git root - skipping")
       end
     end
     
@@ -164,22 +164,31 @@ function M.get_claude_code_instances(git_root)
         line:match("(%%[0-9]+) ([^ ]+) ([^ ]+) ([0-9]+) ([0-9]+) ([^ ]+) (.*)")
       
       if pane_id and command and pane_path then
-        -- Check if this pane is in the git repo root
+        -- Check if this pane is EXACTLY in the git repo root (not a subdirectory)
         if pane_path == git_root and command == "node" then
-          debug.log("AGGRESSIVE MODE: Found Node.js process in git repo root: " .. pane_id)
+          -- Additional verification: check if pane content suggests Claude
+          local content_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", pane_id)
+          local content = vim.fn.system(content_cmd)
           
-          -- Add as a Claude Code instance
-          local is_current_session = (session == current_session)
-          table.insert(instances, {
-            pane_id = pane_id,
-            session = session,
-            window_name = window_name,
-            window_idx = window_idx,
-            pane_idx = pane_idx,
-            command = command,
-            is_current_session = is_current_session,
-            display = string.format("%s: %s.%s (%s) [Auto-detected]", session, window_idx, pane_idx, window_name)
-          })
+          if content:lower():match("claude") or 
+             content:match("anthropic") or 
+             content:match("You are Claude") then
+             
+            debug.log("AGGRESSIVE MODE: Found Node.js process in git repo root with Claude content: " .. pane_id)
+            
+            -- Add as a Claude Code instance
+            local is_current_session = (session == current_session)
+            table.insert(instances, {
+              pane_id = pane_id,
+              session = session,
+              window_name = window_name,
+              window_idx = window_idx,
+              pane_idx = pane_idx,
+              command = command,
+              is_current_session = is_current_session,
+              display = string.format("%s: %s.%s (%s) [Auto-detected]", session, window_idx, pane_idx, window_name)
+            })
+          end
         end
       end
     end
