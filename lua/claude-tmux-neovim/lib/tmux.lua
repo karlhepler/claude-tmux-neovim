@@ -382,37 +382,46 @@ function M.with_claude_code_instance(git_root, callback)
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Use scheduled notification to not block the UI
-    vim.ui.select(choices, {
-      prompt = "Select Claude Code instance:",
-      format_item = function(item) return item end,
-    }, function(choice)
-      -- Clear command line immediately
+    -- Use vim.ui.select with proper scheduling to avoid the "Press Enter" prompt
+    vim.schedule(function()
+      -- Temporarily set cmdheight to avoid the "Press Enter" prompt
+      local old_cmdheight = vim.o.cmdheight
+      vim.o.cmdheight = 2
+      
+      -- Clear command line before showing UI
       vim.cmd("echo ''")
       
-      if not choice then return end
-      
-      local idx = tonumber(choice:match("^(%d+)%."))
-      if idx and idx <= #instances then
-        -- Use selected instance
-        if config.get().remember_choice then
-          config.set_remembered_instance(git_root, instances[idx])
-        end
-        -- Ensure this happens in a separate tick to avoid UI issues
-        vim.schedule(function()
+      vim.ui.select(choices, {
+        prompt = "Select Claude Code instance:",
+        format_item = function(item) return item end,
+      }, function(choice)
+        -- Restore original cmdheight immediately
+        vim.o.cmdheight = old_cmdheight
+        
+        -- Clear command line immediately
+        vim.cmd("echo ''")
+        vim.cmd("redraw")
+        
+        if not choice then return end
+        
+        local idx = tonumber(choice:match("^(%d+)%."))
+        if idx and idx <= #instances then
+          -- Use selected instance
+          if config.get().remember_choice then
+            config.set_remembered_instance(git_root, instances[idx])
+          end
+          -- Process the selection immediately, not in a new tick
           callback(instances[idx])
-        end)
-      elseif idx == #instances + 1 then
-        -- Create new instance
-        local new_instance = M.create_claude_code_instance(git_root)
-        if new_instance and config.get().remember_choice then
-          config.set_remembered_instance(git_root, new_instance)
-        end
-        -- Ensure this happens in a separate tick to avoid UI issues
-        vim.schedule(function()
+        elseif idx == #instances + 1 then
+          -- Create new instance
+          local new_instance = M.create_claude_code_instance(git_root)
+          if new_instance and config.get().remember_choice then
+            config.set_remembered_instance(git_root, new_instance)
+          end
+          -- Process the new instance immediately
           callback(new_instance)
-        end)
-      end
+        end
+      end)
     end)
   end
 end

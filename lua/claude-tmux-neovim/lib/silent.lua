@@ -13,8 +13,9 @@ function M.send_normal()
     main.send_context({})
   end)
   
-  -- Clear command line
+  -- Clear command line and force redraw to prevent "Press Enter" prompt
   vim.cmd("echo ''")
+  vim.cmd("redraw")
 end
 
 --- Get selected text in visual mode
@@ -96,8 +97,9 @@ function M.send_visual()
     end
   end)
   
-  -- Clear command line and exit visual mode
+  -- Clear command line, force redraw, and exit visual mode
   vim.cmd("echo ''")
+  vim.cmd("redraw")
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
 end
 
