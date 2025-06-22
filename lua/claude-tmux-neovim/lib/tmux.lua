@@ -418,8 +418,8 @@ function M.with_claude_code_instance(git_root, callback)
     local menu_items = {"Select Claude Code instance:"}
     
     -- Table dimensions and formatting
-    local table_width = 70
-    local col_widths = {3, 15, 8, 6, 32}  -- Adjust column widths here
+    local table_width = 80
+    local col_widths = {3, 12, 8, 6, 45}  -- Adjust column widths here
     
     -- Create horizontal separator line
     local function make_separator()
@@ -451,9 +451,65 @@ function M.with_claude_code_instance(git_root, callback)
       )
       local window_name = vim.fn.system(window_info_cmd):gsub("%s+$", "")
       
-      -- Truncate window name if too long
-      if #window_name > col_widths[5] - 2 then
-        window_name = string.sub(window_name, 1, col_widths[5] - 5) .. "..."
+      -- Try different capture strategies to find meaningful content
+      -- First look at recent content (top of pane)
+      local recent_cmd = string.format(
+        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 10",
+        instance.pane_id
+      )
+      local recent_content = vim.fn.system(recent_cmd):gsub("%s+$", "")
+      
+      -- Also look at prompt area (bottom of pane)
+      local prompt_cmd = string.format(
+        "tmux capture-pane -p -t %s | grep -v '^$' | tail -n 5",
+        instance.pane_id
+      )
+      local prompt_content = vim.fn.system(prompt_cmd):gsub("%s+$", "")
+      
+      -- Combine content for analysis
+      local pane_content = recent_content
+      
+      -- Look for conversation markers in both areas
+      local human_prompt = recent_content:match("Human:[^\n]*") or prompt_content:match("Human:[^\n]*")
+      local claude_response = recent_content:match("Claude:[^\n]*") or prompt_content:match("Claude:[^\n]*")
+      local you_prompt = recent_content:match("You:[^\n]*") or prompt_content:match("You:[^\n]*")
+      
+      -- Get first line as a fallback
+      local first_line = recent_content:match("^[^\n]+") or prompt_content:match("^[^\n]+") or ""
+      
+      -- Try to find the best marker for this Claude instance
+      local claude_marker
+      
+      -- Prioritize Human/You prompts over Claude responses
+      if human_prompt then
+        claude_marker = human_prompt
+      elseif you_prompt then
+        claude_marker = you_prompt
+      elseif claude_response then
+        claude_marker = claude_response
+      else
+        claude_marker = first_line
+      end
+      
+      -- Create a descriptive name that helps identify the Claude instance
+      local display_name = window_name
+      
+      -- If we found a conversation marker or content, use it
+      if claude_marker and claude_marker ~= "" then
+        -- Limit the marker length to keep it readable
+        if #claude_marker > 40 then
+          claude_marker = string.sub(claude_marker, 1, 37) .. "..."
+        end
+        
+        -- Check if it's a blank marker that's just the window name
+        if claude_marker ~= window_name then
+          display_name = claude_marker
+        end
+      end
+      
+      -- Truncate final name if too long
+      if #display_name > col_widths[5] - 2 then
+        display_name = string.sub(display_name, 1, col_widths[5] - 5) .. "..."
       end
       
       -- Format as a nice table row
@@ -463,7 +519,7 @@ function M.with_claude_code_instance(git_root, callback)
                                instance.session, 
                                "W:" .. instance.window_idx, 
                                "P:" .. instance.pane_idx,
-                               window_name)
+                               display_name)
       
       table.insert(menu_items, row)
     end
