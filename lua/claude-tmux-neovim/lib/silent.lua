@@ -8,6 +8,7 @@ local debug = require('claude-tmux-neovim.lib.debug')
 local tmux = require('claude-tmux-neovim.lib.tmux')
 local context = require('claude-tmux-neovim.lib.context')
 local util = require('claude-tmux-neovim.lib.util')
+local config = require('claude-tmux-neovim.lib.config')
 
 --- Send context from normal mode silently
 function M.send_normal()
@@ -174,7 +175,7 @@ function M.create_new_visual()
       return
     end
     
-    -- Create a custom context
+    -- Create a custom context with the visual selection
     local context_data = context.create_context({
       range = 1,
       line1 = start_line,
@@ -194,6 +195,11 @@ function M.create_new_visual()
     
     -- Create a new Claude instance with plain "claude" command (no flags)
     local new_instance = tmux.create_claude_code_instance(git_root, false)
+    
+    -- Set as remembered instance if created successfully
+    if new_instance and config.get().remember_choice then
+      config.set_remembered_instance(git_root, new_instance)
+    end
     
     -- Send context to the new instance and switch to it
     if new_instance then

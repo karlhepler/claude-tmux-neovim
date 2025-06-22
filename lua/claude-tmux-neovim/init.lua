@@ -38,6 +38,7 @@ function M.reset_instances()
 end
 
 --- Create a new Claude Code instance and send context
+---@return table|nil The created instance or nil if failed
 function M.create_new_instance()
   -- Get git root
   local git_root = util.get_git_root()
@@ -45,7 +46,7 @@ function M.create_new_instance()
     vim.schedule(function()
       vim.notify("Not in a git repository", vim.log.levels.WARN)
     end)
-    return
+    return nil
   end
   
   -- Create a new instance with plain "claude" command (no flags)
@@ -56,8 +57,8 @@ function M.create_new_instance()
     config.set_remembered_instance(git_root, new_instance)
   end
   
-  -- If instance was created successfully, send context to it
-  if new_instance then
+  -- If instance was created successfully, send context to it (for normal mode)
+  if new_instance and not vim.fn.mode():match("[vV\22]") then
     -- Create context payload
     local context_data = context.create_context({})
     if context_data then
@@ -68,6 +69,8 @@ function M.create_new_instance()
       tmux.send_to_claude_code(new_instance, xml)
     end
   end
+  
+  return new_instance
 end
 
 --- Reset remembered instance for current git root
@@ -199,7 +202,7 @@ function M.setup(user_config)
   if config.get().keymap_new and config.get().keymap_new ~= "" then
     -- Normal mode - create new Claude instance
     vim.api.nvim_set_keymap('n', config.get().keymap_new,
-      [[<cmd>lua require('claude-tmux-neovim.lib.silent').create_new_normal()<CR>]],
+      [[<cmd>lua require('claude-tmux-neovim').create_new_instance()<CR>]],
       { noremap = true, silent = true })
     
     -- Visual mode - create new Claude instance with visual selection
