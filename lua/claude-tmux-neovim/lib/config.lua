@@ -12,7 +12,6 @@ M.defaults = {
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
   debug = false, -- Enable debug logging
   auto_reload_buffers = true, -- Automatically reload buffers when returning from Claude Code
-  summary_timeout = 2.0, -- Timeout in seconds for generating instance summaries
   
   -- XML template for sending context
   xml_template = [[

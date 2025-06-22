@@ -412,261 +412,67 @@ function M.with_claude_code_instance(git_root, callback)
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Create a proper selection menu with numbered choices and content summaries
+    -- Create a selection menu with a proper table view format
     
-    -- Create a menu with instance summaries
+    -- Create a menu with header
     local menu_items = {"Select Claude Code instance:"}
     
-    -- Prepare to use the user-configured timeout for AI summaries
-    local summary_timeout = config.get().summary_timeout or 2.0
-    debug.log("Using summary timeout: " .. summary_timeout .. " seconds")
+    -- Table dimensions and formatting
+    local table_width = 70
+    local col_widths = {3, 15, 8, 6, 32}  -- Adjust column widths here
     
-    -- First, gather all content from panes
-    local instance_contents = {}
-    local content_files = {}
-    local summary_files = {}
-    
-    -- Capture all pane content first
-    for i, instance in ipairs(instances) do
-      -- Get content from pane, prioritizing the last lines
-      local preview_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | tail -n 15", 
-        instance.pane_id
-      )
-      local content = vim.fn.system(preview_cmd)
-      content = vim.trim(content)
-      
-      -- Store content for this instance
-      instance_contents[i] = content
-      
-      -- If content exists, prepare for AI summarization
-      if content ~= "" and summary_timeout > 0 then
-        -- Create a file for each instance's content
-        local temp_file = os.tmpname()
-        local file = io.open(temp_file, "w")
-        if file then
-          -- Very simple prompt for speed - ask for an extremely concise summary
-          local prompt = "Summarize in 5 words: " .. content
-          file:write(prompt)
-          file:close()
-          content_files[i] = temp_file
-          
-          -- Create a file for the summary output
-          summary_files[i] = os.tmpname()
-        end
+    -- Create horizontal separator line
+    local function make_separator()
+      local line = "+"
+      for _, width in ipairs(col_widths) do
+        line = line .. string.rep("-", width) .. "+"
       end
+      return line
     end
     
-    -- If timeout > 0, try to use Claude for AI summaries
-    if summary_timeout > 0 then
-      -- Run Claude to generate summaries
-      for i, content_file in pairs(content_files) do
-        if content_file and summary_files[i] then
-          -- Create a cross-platform timeout using background process and kill
-          debug.log("Starting AI summary generation for instance " .. i)
-          
-          -- Command to run claude and generate summary
-          -- Use a much shorter prompt for speed and reduce output overhead
-          local claude_cmd = string.format(
-            "%s --print --system-prompt \"Generate only 4-5 words.\" < %s > %s 2>/dev/null", 
-            config.get().claude_code_cmd,
-            content_file,
-            summary_files[i]
-          )
-          
-          -- Use a platform-independent approach for timeouts (macOS compatible)
-          -- Create a script to run the command with timeout
-          local timeout_script = os.tmpname()
-          local script = io.open(timeout_script, "w")
-          
-          if script then
-            -- Write script with timeout logic
-            script:write("#!/bin/bash\n\n")
-            
-            -- Start the command in background and remember its PID
-            script:write(claude_cmd .. " & \n")
-            script:write("PID=$!\n\n")
-            
-            -- Convert timeout to integer seconds and fraction
-            local timeout_int = math.floor(summary_timeout)
-            local timeout_fraction = math.floor((summary_timeout - timeout_int) * 10)
-            
-            -- Wait specified seconds
-            if timeout_int > 0 then
-              script:write("sleep " .. timeout_int .. "\n")
-            end
-            
-            -- Wait fraction of a second if needed
-            if timeout_fraction > 0 then
-              script:write("sleep 0." .. timeout_fraction .. "\n")
-            end
-            
-            -- Check if process is still running and kill if it is
-            script:write("if kill -0 $PID 2>/dev/null; then\n")
-            script:write("  kill $PID 2>/dev/null\n")
-            script:write("  echo \"Timeout reached, killed process\"\n")
-            script:write("fi\n")
-            
-            -- Wait for any remaining processes to complete
-            script:write("wait 2>/dev/null\n")
-            script:close()
-            
-            -- Make script executable
-            vim.fn.system("chmod +x " .. timeout_script)
-            
-            -- Run the script
-            debug.log("Running AI summary generation with timeout " .. summary_timeout .. "s")
-            vim.fn.system(timeout_script)
-            
-            -- Clean up script
-            os.remove(timeout_script)
-          else
-            -- Fallback: just run command directly without timeout if script creation fails
-            debug.log("Failed to create timeout script, running claude directly")
-            vim.fn.system(claude_cmd)
-          end
-        end
-      end
-    end
+    -- Add top border
+    table.insert(menu_items, make_separator())
+    
+    -- Add header row
+    local header = string.format("| %-" .. (col_widths[1]-1) .. "s | %-" .. (col_widths[2]-1) .. "s | %-" .. 
+                                (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s |",
+                                "#", "Session", "Window", "Pane", "Name")
+    table.insert(menu_items, header)
+    
+    -- Add separator after header
+    table.insert(menu_items, make_separator())
     
     -- Process each instance for the menu
     for i, instance in ipairs(instances) do
-      local content = instance_contents[i] or ""
-      local summary = "(Empty pane)"
+      -- Get window info using tmux command
+      local window_info_cmd = string.format(
+        "tmux display-message -t %s -p '#{window_name}'",
+        instance.pane_id
+      )
+      local window_name = vim.fn.system(window_info_cmd):gsub("%s+$", "")
       
-      -- Try to read from summary file if it exists (AI generated summary)
-      if summary_timeout > 0 and summary_files[i] then
-        debug.log("Checking for AI summary for instance " .. i .. " in file " .. summary_files[i])
-        local file = io.open(summary_files[i], "r")
-        if file then
-          local content = file:read("*all")
-          file:close()
-          
-          debug.log("Summary file content length: " .. #(content or ""))
-          
-          if content and content ~= "" then
-            -- Got an AI summary
-            summary = vim.trim(content)
-            debug.log("AI summary found for instance " .. i .. ": " .. summary)
-          else
-            debug.log("No AI summary generated for instance " .. i .. " - file was empty")
-          end
-        else
-          debug.log("Could not open summary file for instance " .. i)
-        end
+      -- Truncate window name if too long
+      if #window_name > col_widths[5] - 2 then
+        window_name = string.sub(window_name, 1, col_widths[5] - 5) .. "..."
       end
       
-      -- Fallback to text extraction if AI summary failed or timeout is 0
-      if summary == "(Empty pane)" and content ~= "" then
-        -- Extract a meaningful summary using pure text analysis
-        
-        -- Get the last line of content as the primary fallback
-        local lines = {}
-        for line in content:gmatch("[^\r\n]+") do
-          if line and line:match("%S") then  -- Only collect non-empty lines
-            table.insert(lines, line)
-          end
-        end
-        
-        -- Get the last non-empty line
-        local last_line = ""
-        if #lines > 0 then
-          last_line = lines[#lines]
-        end
-        
-        -- Try to find Claude's response patterns first for better summaries
-        local claude_response = content:match("Human:.-\n(.-)\n") or
-                               content:match("You:.-\n(.-)\n") or
-                               content:match("Claude:.-\n(.-)\n")
-        
-        if claude_response and claude_response ~= "" then
-          -- Found a Claude response - prefer last line of Claude's response if available
-          local claude_lines = {}
-          for line in claude_response:gmatch("[^\r\n]+") do
-            if line and line:match("%S") then
-              table.insert(claude_lines, line)
-            end
-          end
-          
-          if #claude_lines > 0 then
-            last_line = claude_lines[#claude_lines]
-          end
-        end
-        
-        -- Check if we have a code snippet
-        local code_indicators = {
-          "function", "class", "import", "def", "var", "const", "let",
-          "interface", "struct", "module", "package", "return", "async",
-          "public", "private", "protected", "static", "final", "int",
-          "string", "bool", "void", "null", "nil", "undefined"
-        }
-        
-        -- Check for code keywords
-        local is_code = false
-        for _, keyword in ipairs(code_indicators) do
-          if content:match("[^%w]" .. keyword .. "[^%w]") then
-            is_code = true
-            break
-          end
-        end
-        
-        if is_code then
-          -- It's likely code - identify language if possible
-          local language = ""
-          if content:match("function") and content:match("[{};]") then language = "JavaScript"
-          elseif content:match("import") and content:match("from") then language = "Python/JS"
-          elseif content:match("def") and content:match(":") then language = "Python" 
-          elseif content:match("#include") then language = "C/C++"
-          elseif content:match("package") and content:match(";") then language = "Java"
-          elseif content:match("use strict") then language = "Perl"
-          elseif content:match("<%@") or content:match("<%=") then language = "JSP/ASP"
-          elseif content:match("<[%w]+>") and content:match("</[%w]+>") then language = "HTML/XML"
-          end
-          
-          if language ~= "" then
-            summary = language .. " code snippet"
-          else
-            summary = "Code snippet"
-          end
-        else
-          -- Not code - extract last line (truncate if needed)
-          if last_line and last_line ~= "" then
-            -- Get up to 5 words from the last line
-            local words = {}
-            for word in last_line:gmatch("%S+") do
-              table.insert(words, word)
-              if #words >= 5 then break end
-            end
-            
-            if #words > 0 then
-              summary = table.concat(words, " ")
-            end
-          end
-        end
-      end
+      -- Format as a nice table row
+      local row = string.format("| %-" .. (col_widths[1]-1) .. "d | %-" .. (col_widths[2]-1) .. "s | %-" .. 
+                               (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s |",
+                               i, 
+                               instance.session, 
+                               "W:" .. instance.window_idx, 
+                               "P:" .. instance.pane_idx,
+                               window_name)
       
-      -- Format for display - truncate if too long
-      if #summary > 40 then
-        summary = string.sub(summary, 1, 37) .. "..."
-      end
-      
-      -- Add session and window/pane info to help identify location
-      local location = string.format("%s:%s.%s", 
-        instance.session, instance.window_idx, instance.pane_idx)
-      
-      -- Add a concise summary line for this instance
-      table.insert(menu_items, string.format("%d. [%s] %s", i, location, summary))
+      table.insert(menu_items, row)
     end
     
-    -- Clean up all temporary files
-    if summary_timeout > 0 then
-      for _, file in pairs(content_files) do
-        if file then os.remove(file) end
-      end
-      for _, file in pairs(summary_files) do
-        if file then os.remove(file) end
-      end
-    end
+    -- Add bottom border
+    table.insert(menu_items, make_separator())
+    
+    -- Add a blank line before the create option
+    table.insert(menu_items, "")
     
     -- Add option to create a new instance
     table.insert(menu_items, string.format("%d. Create new Claude Code instance", #instances + 1))

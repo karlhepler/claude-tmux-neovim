@@ -102,7 +102,6 @@ require("claude-tmux-neovim").setup({
   auto_switch_pane = true,         -- Auto switch to Claude pane
   remember_choice = true,          -- Remember instance per git repo
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns to Neovim
-  summary_timeout = 2.0,           -- Timeout in seconds for AI summaries (0 to disable)
   debug = false,                   -- Enable debug logging
 })
 ```
