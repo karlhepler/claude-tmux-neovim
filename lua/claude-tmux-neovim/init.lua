@@ -37,6 +37,26 @@ function M.reset_instances()
   end)
 end
 
+--- Create a new Claude Code instance
+function M.create_new_instance()
+  -- Get git root
+  local git_root = util.get_git_root()
+  if not git_root then
+    vim.schedule(function()
+      vim.notify("Not in a git repository", vim.log.levels.WARN)
+    end)
+    return
+  end
+  
+  -- Create a new instance
+  local new_instance = tmux.create_claude_code_instance(git_root)
+  
+  -- Set as remembered instance if created successfully
+  if new_instance and config.get().remember_choice then
+    config.set_remembered_instance(git_root, new_instance)
+  end
+end
+
 --- Reset remembered instance for current git root
 function M.reset_git_instance()
   local git_root = util.get_git_root()
@@ -141,6 +161,7 @@ function M.setup(user_config)
   
   -- Create user commands with {silent=true}
   vim.api.nvim_create_user_command("ClaudeCodeSend", silent_send_context, { range = true, bang = true })
+  vim.api.nvim_create_user_command("ClaudeCodeNew", M.create_new_instance, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeReset", M.reset_instances, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeResetGit", M.reset_git_instance, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeDebug", M.toggle_debug, { bang = true })
@@ -158,6 +179,13 @@ function M.setup(user_config)
     -- For visual mode, use a more direct approach with :xnoremap to ensure it works properly
     vim.api.nvim_set_keymap('x', config.get().keymap, 
       [[<ESC>:lua require('claude-tmux-neovim.lib.silent').send_visual()<CR>]], 
+      { noremap = true, silent = true })
+  end
+  
+  -- Set up create new instance keymap
+  if config.get().keymap_new and config.get().keymap_new ~= "" then
+    vim.api.nvim_set_keymap('n', config.get().keymap_new,
+      [[<cmd>lua require('claude-tmux-neovim').create_new_instance()<CR>]],
       { noremap = true, silent = true })
   end
 end

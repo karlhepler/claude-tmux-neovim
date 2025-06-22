@@ -7,7 +7,8 @@ local M = {}
 -- Default configuration
 M.defaults = {
   keymap = "<leader>cc", -- Default keymap to trigger sending context
-  claude_code_cmd = "claude", -- Command to start Claude Code
+  keymap_new = "<leader>cn", -- Default keymap to create new Claude Code instance
+  claude_code_cmd = "claude --continue", -- Command to start Claude Code with continue flag
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
   remember_choice = true, -- Remember chosen Claude Code instance per git repo
   debug = false, -- Enable debug logging

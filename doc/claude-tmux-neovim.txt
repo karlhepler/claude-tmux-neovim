@@ -31,7 +31,8 @@ maintaining your preferred environment.
 ==============================================================================
 2. FEATURES                                    *claude-tmux-neovim-features*
 
-- Send code context to Claude Code with a single keystroke
+- Send code context to Claude Code with a single keystroke (`<leader>cc`)
+- Create new Claude Code instances with a dedicated shortcut (`<leader>cn`)
 - Works with visual selections for more targeted assistance
 - Git repository isolation - only shows Claude Code instances in the same repo
 - Smart instance management:
@@ -131,9 +132,13 @@ All configuration options:
     The key mapping to trigger sending context to Claude Code.
     Default: "<leader>cc"
 
+`keymap_new` (string)
+    The key mapping to create a new Claude Code instance.
+    Default: "<leader>cn"
+
 `claude_code_cmd` (string) 
     The command used to start Claude Code.
-    Default: "claude"
+    Default: "claude --continue"
 
 `auto_switch_pane` (boolean)
     Whether to automatically switch to the Claude Code pane after sending context.
@@ -175,6 +180,9 @@ helping Claude Code focus on the specific portion you need help with.
 *:ClaudeCodeSend*
     Send the current file context to Claude Code.
 
+*:ClaudeCodeNew*
+    Create a new Claude Code instance.
+
 *:ClaudeCodeReset*
     Reset all remembered Claude Code instances.
 
@@ -196,10 +204,11 @@ helping Claude Code focus on the specific portion you need help with.
 ==============================================================================
 8. KEYMAPS                                      *claude-tmux-neovim-keymaps*
 
-By default, the plugin maps `<leader>cc` in both normal and visual mode to
-send context to Claude Code.
+The plugin provides the following default keymaps:
+- `<leader>cc` in both normal and visual mode to send context to Claude Code
+- `<leader>cn` in normal mode to create a new Claude Code instance
 
-You can change this by setting the `keymap` option in the setup function:
+You can change these by setting the `keymap` and `keymap_new` options in the setup function:
 
 ```lua
 require("claude-tmux-neovim").setup({
