@@ -417,12 +417,16 @@ function M.with_claude_code_instance(git_root, callback)
     -- Create a menu with instance summaries
     local menu_items = {"Select Claude Code instance:"}
     
-    -- First, capture content from all panes in parallel
+    -- Prepare to use the user-configured timeout for AI summaries
+    local summary_timeout = config.get().summary_timeout or 2.0
+    debug.log("Using summary timeout: " .. summary_timeout .. " seconds")
+    
+    -- First, gather all content from panes
     local instance_contents = {}
     local content_files = {}
     local summary_files = {}
     
-    -- Prepare all content captures in parallel
+    -- Capture all pane content first
     for i, instance in ipairs(instances) do
       -- Get content from pane
       local preview_cmd = string.format(
@@ -435,8 +439,8 @@ function M.with_claude_code_instance(git_root, callback)
       -- Store content for this instance
       instance_contents[i] = content
       
-      -- If content exists, prepare for summarization
-      if content ~= "" then
+      -- If content exists, prepare for AI summarization
+      if content ~= "" and summary_timeout > 0 then
         -- Create a file for each instance's content
         local temp_file = os.tmpname()
         local file = io.open(temp_file, "w")
@@ -453,53 +457,120 @@ function M.with_claude_code_instance(git_root, callback)
       end
     end
     
-    -- Run all summarization commands in parallel using background processes
-    local summary_processes = {}
-    for i, content_file in pairs(content_files) do
-      if content_file and summary_files[i] then
-        -- Fast summarization using background process and system prompt for speed
-        local claude_cmd = string.format(
-          "%s --print --system-prompt \"You provide extremely concise 4-5 word summaries. No explanation.\" < %s > %s 2>/dev/null &", 
-          config.get().claude_code_cmd,
-          content_file,
-          summary_files[i]
-        )
-        
-        -- Run in background
-        vim.fn.system(claude_cmd)
+    -- If timeout > 0, try to use Claude for AI summaries
+    if summary_timeout > 0 then
+      -- Run Claude to generate summaries with timeout
+      for i, content_file in pairs(content_files) do
+        if content_file and summary_files[i] then
+          -- Use timeout command to limit execution time
+          local timeout_value = math.floor(summary_timeout)
+          local timeout_fraction = math.floor((summary_timeout - timeout_value) * 10)
+          local timeout_str = string.format("%d.%d", timeout_value, timeout_fraction)
+          
+          local claude_cmd = string.format(
+            "timeout %s %s --print --system-prompt \"You provide extremely concise 4-5 word summaries. No explanation.\" < %s > %s 2>/dev/null", 
+            timeout_str,
+            config.get().claude_code_cmd,
+            content_file,
+            summary_files[i]
+          )
+          
+          -- Run with timeout
+          vim.fn.system(claude_cmd)
+        end
       end
     end
     
-    -- Small delay to allow processes to complete (can be adjusted)
-    vim.fn.system("sleep 0.2")
-    
-    -- Collect results and build menu items
+    -- Process each instance for the menu
     for i, instance in ipairs(instances) do
+      local content = instance_contents[i] or ""
       local summary = "(Empty pane)"
       
-      -- Try to read from summary file if it exists
-      if summary_files[i] then
+      -- Try to read from summary file if it exists (AI generated summary)
+      if summary_timeout > 0 and summary_files[i] then
         local file = io.open(summary_files[i], "r")
         if file then
           local content = file:read("*all")
           file:close()
           if content and content ~= "" then
+            -- Got an AI summary
             summary = vim.trim(content)
+            debug.log("AI summary for instance " .. i .. ": " .. summary)
           end
         end
       end
       
-      -- If no summary from Claude, create a simple one from the content
-      if summary == "(Empty pane)" and instance_contents[i] and instance_contents[i] ~= "" then
-        -- Extract first few words as fallback
-        local first_line = instance_contents[i]:match("^[^\n]+") or ""
-        local words = {}
-        for word in first_line:gmatch("%S+") do
-          table.insert(words, word)
-          if #words >= 5 then break end
-        end
-        if #words > 0 then
-          summary = table.concat(words, " ")
+      -- Fallback to text extraction if AI summary failed or timeout is 0
+      if summary == "(Empty pane)" and content ~= "" then
+        -- Extract a meaningful summary using pure text analysis
+        
+        -- Try to find Claude's response patterns first for better summaries
+        local claude_response = content:match("Human:.-\n(.-)\n") or
+                               content:match("You:.-\n(.-)\n") or
+                               content:match("Claude:.-\n(.-)\n")
+        
+        if claude_response and claude_response ~= "" then
+          -- Found a Claude response - use the first few words
+          local words = {}
+          for word in claude_response:gmatch("%S+") do
+            table.insert(words, word)
+            if #words >= 5 then break end
+          end
+          
+          if #words > 0 then
+            summary = table.concat(words, " ")
+          end
+        else
+          -- No clear Claude response - look for code-related keywords
+          local code_indicators = {
+            "function", "class", "import", "def", "var", "const", "let",
+            "interface", "struct", "module", "package", "return", "async",
+            "public", "private", "protected", "static", "final", "int",
+            "string", "bool", "void", "null", "nil", "undefined"
+          }
+          
+          -- Check for code keywords
+          local is_code = false
+          for _, keyword in ipairs(code_indicators) do
+            if content:match("[^%w]" .. keyword .. "[^%w]") then
+              is_code = true
+              break
+            end
+          end
+          
+          if is_code then
+            -- It's likely code - identify language if possible
+            local language = ""
+            if content:match("function") and content:match("[{};]") then language = "JavaScript"
+            elseif content:match("import") and content:match("from") then language = "Python/JS"
+            elseif content:match("def") and content:match(":") then language = "Python" 
+            elseif content:match("#include") then language = "C/C++"
+            elseif content:match("package") and content:match(";") then language = "Java"
+            elseif content:match("use strict") then language = "Perl"
+            elseif content:match("<%@") or content:match("<%=") then language = "JSP/ASP"
+            elseif content:match("<[%w]+>") and content:match("</[%w]+>") then language = "HTML/XML"
+            end
+            
+            if language ~= "" then
+              summary = language .. " code snippet"
+            else
+              summary = "Code snippet"
+            end
+          else
+            -- Not code - extract first line or sentence
+            local first_line = content:match("^[^\n]+") or ""
+            
+            -- Try to get first few words of a sentence
+            local words = {}
+            for word in first_line:gmatch("%S+") do
+              table.insert(words, word)
+              if #words >= 5 then break end
+            end
+            
+            if #words > 0 then
+              summary = table.concat(words, " ")
+            end
+          end
         end
       end
       
@@ -517,11 +588,13 @@ function M.with_claude_code_instance(git_root, callback)
     end
     
     -- Clean up all temporary files
-    for _, file in pairs(content_files) do
-      os.remove(file)
-    end
-    for _, file in pairs(summary_files) do
-      os.remove(file)
+    if summary_timeout > 0 then
+      for _, file in pairs(content_files) do
+        if file then os.remove(file) end
+      end
+      for _, file in pairs(summary_files) do
+        if file then os.remove(file) end
+      end
     end
     
     -- Add option to create a new instance
