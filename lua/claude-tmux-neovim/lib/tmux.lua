@@ -63,7 +63,7 @@ function M.get_claude_code_instances(git_root)
       debug.log("Found path-based command match: '" .. command .. "' ends with '/" .. claude_code_cmd .. "'")
       is_claude = true
     -- Method 3: For shell wrappers - check if it's a node.js process running claude code
-    elseif command == "node" then
+    elseif command == "node" or command == "node.js" or command:match("node") then
       debug.log("Found Node.js process in pane " .. pane_id)
       
       -- Special case for Claude Code which often runs as a Node.js process
@@ -83,12 +83,33 @@ function M.get_claude_code_instances(git_root)
           debug.log("Process command line contains 'claude', assuming Claude Code")
           is_claude = true
         else
-          -- If the Node.js process is in the git repo root, it's likely Claude Code
-          if pane_path == git_root then
+          -- Examine pane content to check if it's Claude Code
+          local content_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", pane_id)
+          local content = vim.fn.system(content_cmd)
+          
+          if content:lower():match("claude") or 
+             content:match("anthropic") or 
+             content:match("You are Claude") then
+            debug.log("Pane content suggests Claude Code")
+            is_claude = true
+          -- If the Node.js process is in the git repo root, it might be Claude Code
+          elseif pane_path == git_root then
             debug.log("Node.js process is in git repo root, likely Claude Code")
             is_claude = true
           end
         end
+      end
+    -- Method 4: Check content for Claude indicators regardless of process
+    else
+      -- Check content of the pane for Claude indicators
+      local content_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", pane_id)
+      local content = vim.fn.system(content_cmd)
+      
+      if content:lower():match("claude") or 
+         content:match("anthropic") or 
+         content:match("You are Claude") then
+        debug.log("Pane content suggests Claude Code despite command: " .. command)
+        is_claude = true
       end
     end
     
@@ -389,21 +410,56 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Get more detailed content for each instance
     for i, instance in ipairs(instances) do
-      -- Get a full sentence or content summary from each pane
+      -- Get content from pane and create a concise 4-5 word summary
       local preview_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 5 | tr '\n' ' ' | sed 's/\\s\\+/ /g' | cut -c 1-60", 
+        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 3", 
         instance.pane_id
       )
-      local preview = vim.fn.system(preview_cmd)
-      preview = vim.trim(preview)
+      local content = vim.fn.system(preview_cmd)
+      content = vim.trim(content)
       
-      -- Ensure we have some content to display
-      if preview == "" then
-        preview = "(Empty pane)"
+      -- Generate a concise 4-5 word summary
+      local summary = ""
+      if content ~= "" then
+        -- Try to extract first sentence or key phrase
+        local first_line = content:match("^[^\n]+")
+        if first_line then
+          -- Extract first 4-5 words
+          local words = {}
+          for word in first_line:gmatch("%S+") do
+            table.insert(words, word)
+            if #words >= 5 then
+              break
+            end
+          end
+          
+          -- Create summary from words (up to 5)
+          if #words > 0 then
+            summary = table.concat(words, " ")
+            if #words < 5 and content:find("\n") then
+              -- If we have fewer than 5 words and more content, add "..."
+              summary = summary .. "..."
+            end
+          end
+        end
       end
       
-      -- Add a nice summary line for this instance (number and content preview)
-      table.insert(menu_items, string.format("%d. %s", i, preview))
+      -- Default if we couldn't create a summary
+      if summary == "" then
+        summary = "(Empty pane)"
+      end
+      
+      -- Format for display - truncate if too long
+      if #summary > 40 then
+        summary = string.sub(summary, 1, 37) .. "..."
+      end
+      
+      -- Add session and window/pane info to help identify location
+      local location = string.format("%s:%s.%s", 
+        instance.session, instance.window_idx, instance.pane_idx)
+      
+      -- Add a concise summary line for this instance
+      table.insert(menu_items, string.format("%d. [%s] %s", i, location, summary))
     end
     
     -- Add option to create a new instance
