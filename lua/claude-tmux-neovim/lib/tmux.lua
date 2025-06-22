@@ -412,7 +412,81 @@ function M.with_claude_code_instance(git_root, callback)
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Create a selection menu with a proper table view format
+    -- Create a selection menu with a proper table view format and AI-generated summaries
+    
+    -- Prepare for AI summaries
+    local summary_timeout = config.get().summary_timeout or 1.0
+    debug.log("Using summary timeout: " .. summary_timeout .. " seconds")
+    
+    -- Prepare to gather content and generate summaries in parallel
+    local instance_contents = {}
+    local temp_files = {}
+    local summary_processes = {}
+    local summary_results = {}
+    
+    -- First pass: Capture content from all panes
+    for i, instance in ipairs(instances) do
+      -- Capture entire pane content
+      local content_cmd = string.format(
+        "tmux capture-pane -p -t %s",
+        instance.pane_id
+      )
+      local pane_content = vim.fn.system(content_cmd)
+      instance_contents[i] = pane_content
+      
+      -- Create a temporary file for the content
+      local temp_file = os.tmpname()
+      local file = io.open(temp_file, "w")
+      if file then
+        -- Very simple prompt that will be fast to process
+        file:write("Describe this in 5 words: " .. pane_content)
+        file:close()
+        temp_files[i] = temp_file
+        
+        -- Create the command to run Claude with a timeout
+        local script_file = os.tmpname()
+        local script = io.open(script_file, "w")
+        
+        if script then
+          -- Create a temporary file for output
+          local output_file = os.tmpname()
+          summary_results[i] = output_file
+          
+          -- Write a script that runs Claude with timeout
+          script:write("#!/bin/bash\n\n")
+          
+          -- Background process with timeout
+          script:write("(timeout " .. summary_timeout .. " " .. 
+                      config.get().claude_code_cmd .. 
+                      " --print --system-prompt \"Only output 5 words max.\" < " .. 
+                      temp_file .. " > " .. output_file .. " 2>/dev/null) & \n")
+          script:write("PID=$!\n")
+          
+          -- Allow the timeout specified
+          script:write("sleep " .. summary_timeout .. "\n")
+          
+          -- Kill if still running after timeout
+          script:write("if kill -0 $PID 2>/dev/null; then\n")
+          script:write("  kill $PID 2>/dev/null\n")
+          script:write("fi\n")
+          
+          script:close()
+          
+          -- Make the script executable
+          vim.fn.system("chmod +x " .. script_file)
+          
+          -- Store the script file to run later
+          summary_processes[i] = script_file
+        end
+      end
+    end
+    
+    -- Run all AI summary processes in parallel
+    debug.log("Starting " .. #summary_processes .. " Claude processes in parallel")
+    for i, script_file in pairs(summary_processes) do
+      -- Run the script (will start Claude and auto-terminate)
+      vim.fn.system(script_file .. " &")
+    end
     
     -- Create a menu with header
     local menu_items = {"Select Claude Code instance:"}
@@ -436,11 +510,15 @@ function M.with_claude_code_instance(git_root, callback)
     -- Add header row
     local header = string.format("| %-" .. (col_widths[1]-1) .. "s | %-" .. (col_widths[2]-1) .. "s | %-" .. 
                                 (col_widths[3]-1) .. "s | %-" .. (col_widths[4]-1) .. "s | %-" .. (col_widths[5]-1) .. "s |",
-                                "#", "Session", "Window", "Pane", "Name")
+                                "#", "Session", "Window", "Pane", "Description")
     table.insert(menu_items, header)
     
     -- Add separator after header
     table.insert(menu_items, make_separator())
+    
+    -- Give processes a moment to complete (adjust timeout as needed)
+    vim.fn.system("sleep " .. (summary_timeout + 0.1))
+    debug.log("Collecting Claude summary results")
     
     -- Process each instance for the menu
     for i, instance in ipairs(instances) do
@@ -451,65 +529,29 @@ function M.with_claude_code_instance(git_root, callback)
       )
       local window_name = vim.fn.system(window_info_cmd):gsub("%s+$", "")
       
-      -- Try different capture strategies to find meaningful content
-      -- First look at recent content (top of pane)
-      local recent_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 10",
-        instance.pane_id
-      )
-      local recent_content = vim.fn.system(recent_cmd):gsub("%s+$", "")
-      
-      -- Also look at prompt area (bottom of pane)
-      local prompt_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | tail -n 5",
-        instance.pane_id
-      )
-      local prompt_content = vim.fn.system(prompt_cmd):gsub("%s+$", "")
-      
-      -- Combine content for analysis
-      local pane_content = recent_content
-      
-      -- Look for conversation markers in both areas
-      local human_prompt = recent_content:match("Human:[^\n]*") or prompt_content:match("Human:[^\n]*")
-      local claude_response = recent_content:match("Claude:[^\n]*") or prompt_content:match("Claude:[^\n]*")
-      local you_prompt = recent_content:match("You:[^\n]*") or prompt_content:match("You:[^\n]*")
-      
-      -- Get first line as a fallback
-      local first_line = recent_content:match("^[^\n]+") or prompt_content:match("^[^\n]+") or ""
-      
-      -- Try to find the best marker for this Claude instance
-      local claude_marker
-      
-      -- Prioritize Human/You prompts over Claude responses
-      if human_prompt then
-        claude_marker = human_prompt
-      elseif you_prompt then
-        claude_marker = you_prompt
-      elseif claude_response then
-        claude_marker = claude_response
-      else
-        claude_marker = first_line
-      end
-      
-      -- Create a descriptive name that helps identify the Claude instance
+      -- Default display name is the window name
       local display_name = window_name
       
-      -- If we found a conversation marker or content, use it
-      if claude_marker and claude_marker ~= "" then
-        -- Limit the marker length to keep it readable
-        if #claude_marker > 40 then
-          claude_marker = string.sub(claude_marker, 1, 37) .. "..."
+      -- Try to read AI summary
+      if summary_results[i] then
+        local file = io.open(summary_results[i], "r")
+        if file then
+          local summary = file:read("*all")
+          file:close()
+          
+          if summary and summary ~= "" then
+            -- Clean up the summary
+            summary = summary:gsub("^%s+", ""):gsub("%s+$", "")
+            
+            -- Truncate if too long
+            if #summary > 40 then
+              summary = string.sub(summary, 1, 37) .. "..."
+            end
+            
+            -- Use the AI summary
+            display_name = summary
+          end
         end
-        
-        -- Check if it's a blank marker that's just the window name
-        if claude_marker ~= window_name then
-          display_name = claude_marker
-        end
-      end
-      
-      -- Truncate final name if too long
-      if #display_name > col_widths[5] - 2 then
-        display_name = string.sub(display_name, 1, col_widths[5] - 5) .. "..."
       end
       
       -- Format as a nice table row
@@ -532,6 +574,17 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Add option to create a new instance
     table.insert(menu_items, string.format("%d. Create new Claude Code instance", #instances + 1))
+    
+    -- Clean up all temporary files
+    for _, file in pairs(temp_files) do
+      if file then os.remove(file) end
+    end
+    for _, file in pairs(summary_results) do
+      if file then os.remove(file) end
+    end
+    for _, file in pairs(summary_processes) do
+      if file then os.remove(file) end
+    end
     
     -- Display the menu with vim.fn.inputlist
     vim.schedule(function()
