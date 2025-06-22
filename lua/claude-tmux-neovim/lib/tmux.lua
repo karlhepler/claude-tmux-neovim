@@ -546,9 +546,17 @@ function M.send_to_claude_code(instance, context)
     return false
   end
   
-  -- Paste buffer into target pane (silently)
+  -- First add two newlines to position the cursor
+  local newline_cmd = string.format('tmux send-keys -t %s Enter Enter 2>/dev/null', instance.pane_id)
+  vim.fn.system(newline_cmd)
+  
+  -- Then paste buffer into target pane (silently)
   local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s 2>/dev/null', instance.pane_id)
   vim.fn.system(paste_cmd)
+  
+  -- Move cursor to beginning of input
+  local home_cmd = string.format('tmux send-keys -t %s Home 2>/dev/null', instance.pane_id)
+  vim.fn.system(home_cmd)
   
   -- Clean up temp file
   os.remove(temp_file)
