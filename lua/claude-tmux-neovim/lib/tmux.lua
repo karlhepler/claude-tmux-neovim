@@ -774,14 +774,45 @@ function M.with_claude_code_instance(git_root, callback)
   end
   
   if #instances == 0 then
+    debug.log("No existing Claude instances found. Creating a new one with --continue flag")
+    
     -- Create new instance silently if none found using claude --continue flag
     -- When creating via get_claude_code_instances, we want to use the full command with flags
     local new_instance = M.create_claude_code_instance(git_root, true) -- Pass true to indicate using the full command
+    
     if new_instance then
+      debug.log("Successfully created new Claude instance with ID: " .. new_instance.pane_id)
+      
+      -- Verify the pane actually exists before proceeding
+      local verify_cmd = string.format("tmux has-session -t %s 2>/dev/null && echo exists || echo missing", 
+                                      new_instance.pane_id)
+      local pane_exists = vim.trim(vim.fn.system(verify_cmd))
+      
+      if pane_exists ~= "exists" then
+        debug.log("WARNING: Newly created pane doesn't exist! Trying to find by window index")
+        
+        -- Try to find by window index instead
+        local find_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
+                                      new_instance.session, new_instance.window_idx)
+        local alternative_pane = vim.trim(vim.fn.system(find_cmd))
+        
+        if alternative_pane ~= "" then
+          debug.log("Found alternative pane ID: " .. alternative_pane)
+          new_instance.pane_id = alternative_pane
+        else
+          debug.log("Failed to find alternative pane ID!")
+          vim.notify("Warning: Created new Claude instance but couldn't verify its pane ID", vim.log.levels.WARN)
+        end
+      end
+      
       if config.get().remember_choice then
         config.set_remembered_instance(git_root, new_instance)
       end
+      
       callback(new_instance)
+    else
+      debug.log("Failed to create new Claude instance!")
+      vim.notify("Failed to create new Claude Code instance", vim.log.levels.ERROR)
     end
   elseif #instances == 1 then
     -- Use the only instance without notification
