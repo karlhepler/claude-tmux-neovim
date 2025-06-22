@@ -428,9 +428,9 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Capture all pane content first
     for i, instance in ipairs(instances) do
-      -- Get content from pane
+      -- Get content from pane, prioritizing the last lines
       local preview_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", 
+        "tmux capture-pane -p -t %s | grep -v '^$' | tail -n 15", 
         instance.pane_id
       )
       local content = vim.fn.system(preview_cmd)
@@ -504,65 +504,80 @@ function M.with_claude_code_instance(git_root, callback)
       if summary == "(Empty pane)" and content ~= "" then
         -- Extract a meaningful summary using pure text analysis
         
+        -- Get the last line of content as the primary fallback
+        local lines = {}
+        for line in content:gmatch("[^\r\n]+") do
+          if line and line:match("%S") then  -- Only collect non-empty lines
+            table.insert(lines, line)
+          end
+        end
+        
+        -- Get the last non-empty line
+        local last_line = ""
+        if #lines > 0 then
+          last_line = lines[#lines]
+        end
+        
         -- Try to find Claude's response patterns first for better summaries
         local claude_response = content:match("Human:.-\n(.-)\n") or
                                content:match("You:.-\n(.-)\n") or
                                content:match("Claude:.-\n(.-)\n")
         
         if claude_response and claude_response ~= "" then
-          -- Found a Claude response - use the first few words
-          local words = {}
-          for word in claude_response:gmatch("%S+") do
-            table.insert(words, word)
-            if #words >= 5 then break end
+          -- Found a Claude response - prefer last line of Claude's response if available
+          local claude_lines = {}
+          for line in claude_response:gmatch("[^\r\n]+") do
+            if line and line:match("%S") then
+              table.insert(claude_lines, line)
+            end
           end
           
-          if #words > 0 then
-            summary = table.concat(words, " ")
+          if #claude_lines > 0 then
+            last_line = claude_lines[#claude_lines]
+          end
+        end
+        
+        -- Check if we have a code snippet
+        local code_indicators = {
+          "function", "class", "import", "def", "var", "const", "let",
+          "interface", "struct", "module", "package", "return", "async",
+          "public", "private", "protected", "static", "final", "int",
+          "string", "bool", "void", "null", "nil", "undefined"
+        }
+        
+        -- Check for code keywords
+        local is_code = false
+        for _, keyword in ipairs(code_indicators) do
+          if content:match("[^%w]" .. keyword .. "[^%w]") then
+            is_code = true
+            break
+          end
+        end
+        
+        if is_code then
+          -- It's likely code - identify language if possible
+          local language = ""
+          if content:match("function") and content:match("[{};]") then language = "JavaScript"
+          elseif content:match("import") and content:match("from") then language = "Python/JS"
+          elseif content:match("def") and content:match(":") then language = "Python" 
+          elseif content:match("#include") then language = "C/C++"
+          elseif content:match("package") and content:match(";") then language = "Java"
+          elseif content:match("use strict") then language = "Perl"
+          elseif content:match("<%@") or content:match("<%=") then language = "JSP/ASP"
+          elseif content:match("<[%w]+>") and content:match("</[%w]+>") then language = "HTML/XML"
+          end
+          
+          if language ~= "" then
+            summary = language .. " code snippet"
+          else
+            summary = "Code snippet"
           end
         else
-          -- No clear Claude response - look for code-related keywords
-          local code_indicators = {
-            "function", "class", "import", "def", "var", "const", "let",
-            "interface", "struct", "module", "package", "return", "async",
-            "public", "private", "protected", "static", "final", "int",
-            "string", "bool", "void", "null", "nil", "undefined"
-          }
-          
-          -- Check for code keywords
-          local is_code = false
-          for _, keyword in ipairs(code_indicators) do
-            if content:match("[^%w]" .. keyword .. "[^%w]") then
-              is_code = true
-              break
-            end
-          end
-          
-          if is_code then
-            -- It's likely code - identify language if possible
-            local language = ""
-            if content:match("function") and content:match("[{};]") then language = "JavaScript"
-            elseif content:match("import") and content:match("from") then language = "Python/JS"
-            elseif content:match("def") and content:match(":") then language = "Python" 
-            elseif content:match("#include") then language = "C/C++"
-            elseif content:match("package") and content:match(";") then language = "Java"
-            elseif content:match("use strict") then language = "Perl"
-            elseif content:match("<%@") or content:match("<%=") then language = "JSP/ASP"
-            elseif content:match("<[%w]+>") and content:match("</[%w]+>") then language = "HTML/XML"
-            end
-            
-            if language ~= "" then
-              summary = language .. " code snippet"
-            else
-              summary = "Code snippet"
-            end
-          else
-            -- Not code - extract first line or sentence
-            local first_line = content:match("^[^\n]+") or ""
-            
-            -- Try to get first few words of a sentence
+          -- Not code - extract last line (truncate if needed)
+          if last_line and last_line ~= "" then
+            -- Get up to 5 words from the last line
             local words = {}
-            for word in first_line:gmatch("%S+") do
+            for word in last_line:gmatch("%S+") do
               table.insert(words, word)
               if #words >= 5 then break end
             end
