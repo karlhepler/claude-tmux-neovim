@@ -320,18 +320,22 @@ function M.with_claude_code_instance(git_root, callback)
     return
   end
   
-  -- Check for remembered instance
-  if config.get().remember_choice then
-    local instance = config.get_remembered_instance(git_root)
+  -- Find available instances
+  local instances = M.get_claude_code_instances(git_root)
+  
+  -- Check for remembered instance only if we have exactly one instance
+  -- This bypasses the remembered instance logic if we have multiple instances
+  if #instances == 1 and config.get().remember_choice then
+    local remembered_instance = config.get_remembered_instance(git_root)
     
-    if instance then
+    if remembered_instance then
       -- Verify instance still exists (silently)
-      local cmd = string.format("tmux has-session -t %s 2>/dev/null && echo true || echo false", instance.pane_id)
+      local cmd = string.format("tmux has-session -t %s 2>/dev/null && echo true || echo false", remembered_instance.pane_id)
       local exists = vim.fn.system(cmd)
       
       if vim.trim(exists) == "true" then
         -- Use existing instance
-        callback(instance)
+        callback(remembered_instance)
         return
       else
         -- Clear invalid remembered instance without notification
@@ -339,9 +343,6 @@ function M.with_claude_code_instance(git_root, callback)
       end
     end
   end
-  
-  -- Find available instances
-  local instances = M.get_claude_code_instances(git_root)
   
   if #instances == 0 then
     -- Create new instance silently if none found
