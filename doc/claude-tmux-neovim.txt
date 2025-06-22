@@ -146,11 +146,6 @@ All configuration options:
     Whether to automatically reload all buffers when focus returns to Neovim.
     Default: true
 
-`summary_timeout` (number)
-    Timeout in seconds for generating AI summaries when selecting instances.
-    Summaries help identify the content of each Claude Code instance.
-    Default: 1.0
-
 `debug` (boolean)
     Enable debug logging for troubleshooting.
     Default: false

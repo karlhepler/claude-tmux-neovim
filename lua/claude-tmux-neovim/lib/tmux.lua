@@ -416,81 +416,8 @@ function M.with_claude_code_instance(git_root, callback)
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Create a selection menu with a proper table view format and AI-generated summaries
-    
-    -- Prepare for AI summaries
-    local summary_timeout = config.get().summary_timeout or 1.0
-    debug.log("Using summary timeout: " .. summary_timeout .. " seconds")
-    
-    -- Prepare to gather content and generate summaries in parallel
-    local instance_contents = {}
-    local temp_files = {}
-    local summary_processes = {}
-    local summary_results = {}
-    
-    -- First pass: Capture content from all panes
-    for i, instance in ipairs(instances) do
-      -- Capture entire pane content
-      local content_cmd = string.format(
-        "tmux capture-pane -p -t %s",
-        instance.pane_id
-      )
-      local pane_content = vim.fn.system(content_cmd)
-      instance_contents[i] = pane_content
-      
-      -- Create a temporary file for the content
-      local temp_file = os.tmpname()
-      local file = io.open(temp_file, "w")
-      if file then
-        -- Very strict prompt that forces brevity
-        file:write("Describe this content in exactly 5 words maximum. Your entire response must be 5 words or fewer - not a single word more. This is critically important: " .. pane_content)
-        file:close()
-        temp_files[i] = temp_file
-        
-        -- Create the command to run Claude with a timeout
-        local script_file = os.tmpname()
-        local script = io.open(script_file, "w")
-        
-        if script then
-          -- Create a temporary file for output
-          local output_file = os.tmpname()
-          summary_results[i] = output_file
-          
-          -- Write a script that runs Claude with timeout
-          script:write("#!/bin/bash\n\n")
-          
-          -- Background process with timeout
-          script:write("(timeout " .. summary_timeout .. " " .. 
-                      config.get().claude_code_cmd .. 
-                      " --print --system-prompt \"You must respond with exactly 5 words maximum, never more. Be extremely concise.\" < " .. 
-                      temp_file .. " > " .. output_file .. " 2>/dev/null) & \n")
-          script:write("PID=$!\n")
-          
-          -- Allow the timeout specified
-          script:write("sleep " .. summary_timeout .. "\n")
-          
-          -- Kill if still running after timeout
-          script:write("if kill -0 $PID 2>/dev/null; then\n")
-          script:write("  kill $PID 2>/dev/null\n")
-          script:write("fi\n")
-          
-          script:close()
-          
-          -- Make the script executable
-          vim.fn.system("chmod +x " .. script_file)
-          
-          -- Store the script file to run later
-          summary_processes[i] = script_file
-        end
-      end
-    end
-    
-    -- Run all AI summary processes in parallel
-    debug.log("Starting " .. #summary_processes .. " Claude processes in parallel")
-    for i, script_file in pairs(summary_processes) do
-      -- Run the script (will start Claude and auto-terminate)
-      vim.fn.system(script_file .. " &")
-    end
+    -- Create a selection menu with a proper table view format using tmux pane information
+    debug.log("Building instance selection menu with tmux pane information")
     
     -- Create a menu with header
     local menu_items = {"Select Claude Code instance:"}
@@ -520,13 +447,9 @@ function M.with_claude_code_instance(git_root, callback)
     -- Add separator after header
     table.insert(menu_items, make_separator())
     
-    -- Give processes a moment to complete (adjust timeout as needed)
-    vim.fn.system("sleep " .. (summary_timeout + 0.1))
-    debug.log("Collecting Claude summary results")
-    
     -- Process each instance for the menu
     for i, instance in ipairs(instances) do
-      -- Get more detailed pane info using tmux command
+      -- Get detailed information about this pane
       local pane_info_cmd = string.format(
         "tmux display-message -t %s -p '#{window_name}|#{pane_title}|#{pane_current_command}|#{pane_current_path}'",
         instance.pane_id
@@ -535,52 +458,47 @@ function M.with_claude_code_instance(git_root, callback)
       
       -- Parse the info
       local window_name, pane_title, pane_cmd, pane_path = pane_info:match("([^|]+)|([^|]+)|([^|]+)|(.+)")
+      debug.log("Pane " .. i .. " info - Window: " .. (window_name or "nil") .. 
+                ", Title: " .. (pane_title or "nil") .. 
+                ", Command: " .. (pane_cmd or "nil") .. 
+                ", Path: " .. (pane_path or "nil"))
       
-      -- Determine the best name to use
-      local best_name = pane_title
-      if not best_name or best_name == "" then
-        best_name = window_name
-      end
+      -- Get a sample of content from the pane
+      local content_cmd = string.format(
+        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 3",
+        instance.pane_id
+      )
+      local content_sample = vim.fn.system(content_cmd):gsub("%s+$", "")
       
-      -- Add command info if helpful
-      if pane_cmd and pane_cmd ~= "" and pane_cmd ~= "node" then
-        best_name = best_name .. " (" .. pane_cmd .. ")"
-      end
+      -- Determine a good display name
+      local display_name
       
-      -- Default display name is the best name we could find
-      local display_name = best_name or "Claude"
-      
-      -- Try to read AI summary
-      if summary_results[i] then
-        local file = io.open(summary_results[i], "r")
-        if file then
-          local summary = file:read("*all")
-          file:close()
-          
-          if summary and summary ~= "" then
-            -- Clean up the summary
-            summary = summary:gsub("^%s+", ""):gsub("%s+$", "")
-            
-            -- Ensure we only have 5 words maximum
-            local words = {}
-            for word in summary:gmatch("%S+") do
-              table.insert(words, word)
-              if #words >= 5 then break end
-            end
-            
-            if #words > 0 then
-              summary = table.concat(words, " ")
-            end
-            
-            -- Truncate if still too long
-            if #summary > 40 then
-              summary = string.sub(summary, 1, 37) .. "..."
-            end
-            
-            -- Use the AI summary
-            display_name = summary
-          end
+      -- First priority: Use pane title if it's set and meaningful
+      if pane_title and pane_title ~= "" and pane_title ~= "zsh" and pane_title ~= "bash" then
+        display_name = pane_title
+      -- Second priority: Use a good summary of the first few lines
+      elseif content_sample and content_sample ~= "" then
+        -- Extract first line
+        local first_line = content_sample:match("^[^\n]+") or ""
+        
+        -- Keep only first 40 chars
+        if #first_line > 40 then
+          first_line = string.sub(first_line, 1, 37) .. "..."
         end
+        
+        display_name = first_line
+      -- Third priority: Use window name
+      elseif window_name and window_name ~= "" then
+        display_name = window_name
+      -- Last resort: Just use Claude
+      else
+        display_name = "Claude instance"
+      end
+      
+      -- Add command info for extra context if not already in the name
+      if pane_cmd and pane_cmd ~= "" and pane_cmd ~= "node" and 
+         not display_name:match(pane_cmd) then
+        display_name = display_name .. " (" .. pane_cmd .. ")"
       end
       
       -- Format as a nice table row
@@ -603,17 +521,6 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Add option to create a new instance
     table.insert(menu_items, string.format("%d. Create new Claude Code instance", #instances + 1))
-    
-    -- Clean up all temporary files
-    for _, file in pairs(temp_files) do
-      if file then os.remove(file) end
-    end
-    for _, file in pairs(summary_results) do
-      if file then os.remove(file) end
-    end
-    for _, file in pairs(summary_processes) do
-      if file then os.remove(file) end
-    end
     
     -- Display the menu with vim.fn.inputlist
     vim.schedule(function()
