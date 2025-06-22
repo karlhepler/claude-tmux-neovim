@@ -505,10 +505,12 @@ function M.create_claude_code_instance(git_root, use_continue)
     -- For automatic instance creation (when sending context and no instance exists)
     -- use the full command with flags
     claude_cmd = config.get().claude_code_cmd
+    debug.log("Using Claude command with continue flag: " .. claude_cmd)
   else
     -- For explicit new instance creation (via <leader>cn or :ClaudeCodeNew)
     -- use just "claude" without any flags
     claude_cmd = "claude"
+    debug.log("Using Claude command without flags: " .. claude_cmd)
   end
   
   -- Create a new window for Claude Code
@@ -632,17 +634,47 @@ function M.send_to_claude_code(instance, context)
   local max_retries = 3
   local success = false
   
+  -- Verify the pane exists before attempting to paste
+  local verify_cmd = string.format("tmux has-session -t %s 2>/dev/null && echo exists || echo missing", 
+                                  instance.pane_id)
+  local pane_exists = vim.trim(vim.fn.system(verify_cmd))
+  
+  if pane_exists ~= "exists" then
+    debug.log("WARNING: Pane " .. instance.pane_id .. " doesn't exist before paste! Trying to find by window index")
+    
+    -- Try to find by window index instead
+    local find_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
+                                  instance.session, instance.window_idx)
+    local alternative_pane = vim.trim(vim.fn.system(find_cmd))
+    
+    if alternative_pane ~= "" then
+      debug.log("Found alternative pane ID: " .. alternative_pane)
+      instance.pane_id = alternative_pane
+    else
+      debug.log("Failed to find alternative pane ID!")
+      return false
+    end
+  end
+  
+  -- Ensure the window is active before pasting
+  local window_cmd = string.format('tmux select-window -t %s:%s', 
+                                instance.session, instance.window_idx)
+  debug.log("Activating window before paste with: " .. window_cmd)
+  vim.fn.system(window_cmd)
+  
   for retry = 1, max_retries do
     -- Paste content buffer into target pane (silently)
     local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s 2>/dev/null', instance.pane_id)
-    vim.fn.system(paste_cmd)
+    debug.log("Attempting to paste with command: " .. paste_cmd)
+    local result = vim.fn.system(paste_cmd)
     
     if vim.v.shell_error == 0 then
       success = true
       debug.log("Successfully pasted context on attempt " .. retry)
       break
     else
-      debug.log("Paste attempt " .. retry .. " failed, retrying after delay...")
+      debug.log("Paste attempt " .. retry .. " failed with error code " .. vim.v.shell_error .. ", retrying after delay...")
+      debug.log("Error output: " .. (result or ""))
       -- Increase delay with each retry
       vim.fn.system("sleep " .. retry * 0.5)
     end
@@ -778,7 +810,53 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- Create new instance silently if none found using claude --continue flag
     -- When creating via get_claude_code_instances, we want to use the full command with flags
+    -- The parameter should be true to use the --continue flag
     local new_instance = M.create_claude_code_instance(git_root, true) -- Pass true to indicate using the full command
+    
+    -- If creation fails, verify we're actually passing the correct command 
+    if not new_instance then
+      debug.log("Failed initial instance creation attempt. Debug command being used: " .. config.get().claude_code_cmd)
+      
+      -- Try again with direct command
+      -- This is a fallback in case the flag parameter isn't working
+      local create_cmd = string.format("tmux new-window -d -n %s -P -F '#{window_index}' 'cd %s && %s'", 
+        "claude", vim.fn.shellescape(git_root), config.get().claude_code_cmd)
+      
+      debug.log("Trying direct command creation: " .. create_cmd)
+      local new_window_idx = vim.fn.system(create_cmd)
+      new_window_idx = vim.trim(new_window_idx)
+      
+      -- If direct creation worked, proceed with creating our instance manually
+      if vim.v.shell_error == 0 and new_window_idx ~= "" then
+        debug.log("Direct creation succeeded with window index: " .. new_window_idx)
+        
+        -- Get current session
+        local current_session = vim.fn.system("tmux display-message -p '#{session_name}'")
+        current_session = vim.trim(current_session)
+        
+        -- Give it time to start
+        vim.fn.system("sleep 0.5")
+        
+        -- Get the pane ID
+        local pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
+                                     vim.fn.shellescape(current_session), new_window_idx)
+        local pane_id = vim.trim(vim.fn.system(pane_cmd))
+        
+        if pane_id ~= "" then
+          new_instance = {
+            pane_id = pane_id,
+            session = current_session,
+            window_name = "claude",
+            window_idx = new_window_idx,
+            pane_idx = "0",
+            command = config.get().claude_code_cmd,
+            detection_method = "[new]",
+            display = string.format("%s: %s.0 (claude) [new]", current_session, new_window_idx)
+          }
+          debug.log("Successfully created instance via direct method")
+        end
+      end
+    end
     
     if new_instance then
       debug.log("Successfully created new Claude instance with ID: " .. new_instance.pane_id)
