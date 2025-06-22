@@ -382,39 +382,41 @@ function M.with_claude_code_instance(git_root, callback)
     end
     table.insert(choices, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Use a more direct approach with separate UI and response handling
+    -- Create a proper selection menu with numbered choices and content summaries
     
-    -- Store shorter descriptions to avoid "Press Enter" prompt
-    local short_choices = {}
+    -- Create a menu with instance summaries
+    local menu_items = {"Select Claude Code instance:"}
+    
+    -- Get more detailed content for each instance
     for i, instance in ipairs(instances) do
-      -- Keep the display much shorter
-      local session = instance.session
-      local window_pane = instance.window_idx .. "." .. instance.pane_idx
-      
-      -- Capture a brief prefix of the pane content (first few words only)
-      local preview_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 1 | cut -c 1-20", instance.pane_id)
+      -- Get a full sentence or content summary from each pane
+      local preview_cmd = string.format(
+        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 5 | tr '\n' ' ' | sed 's/\\s\\+/ /g' | cut -c 1-60", 
+        instance.pane_id
+      )
       local preview = vim.fn.system(preview_cmd)
       preview = vim.trim(preview)
       
-      -- Format shorter display string
-      if preview ~= "" then
-        short_choices[i] = string.format("%d: %s %s \"%s\"", i, session, window_pane, preview)
-      else
-        short_choices[i] = string.format("%d: %s %s", i, session, window_pane)
+      -- Ensure we have some content to display
+      if preview == "" then
+        preview = "(Empty pane)"
       end
+      
+      -- Add a nice summary line for this instance (number and content preview)
+      table.insert(menu_items, string.format("%d. %s", i, preview))
     end
     
-    -- Add new instance option
-    short_choices[#instances + 1] = string.format("%d: Create new instance", #instances + 1)
+    -- Add option to create a new instance
+    table.insert(menu_items, string.format("%d. Create new Claude Code instance", #instances + 1))
     
-    -- Manual popup using vim.fn.inputlist
+    -- Display the menu with vim.fn.inputlist
     vim.schedule(function()
       -- Save more information to make selection command silent
       local more = vim.o.more
       vim.o.more = false
       
-      -- Show a simple input list (no "Press Enter" prompt)
-      local choice_idx = vim.fn.inputlist({"Select Claude Code instance:"})
+      -- Show a numbered list of options with content previews
+      local choice_idx = vim.fn.inputlist(menu_items)
       
       -- Restore 'more' option
       vim.o.more = more
