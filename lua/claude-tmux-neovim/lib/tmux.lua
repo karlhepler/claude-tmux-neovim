@@ -226,6 +226,31 @@ function M.get_claude_code_instances(git_root)
             end
           end
           
+          -- Get the last line of conversation before the prompt
+          local last_line_cmd = string.format(
+            [[tmux capture-pane -p -t %s | grep -B 1 -m 1 -e '╭─\{1,\}╮' | grep -v '╭─\{1,\}╮' | grep -v '^$' | tail -n 1]],
+            pane_id
+          )
+          local last_line = vim.fn.system(last_line_cmd):gsub("%s+$", "")
+          if last_line and last_line ~= "" then
+            debug.log("Found last conversation line: " .. last_line)
+          end
+          
+          -- Determine display name
+          local display_name
+          if last_line and last_line ~= "" then
+            -- Truncate if needed
+            if #last_line > 40 then
+              display_name = string.sub(last_line, 1, 37) .. "..."
+            else
+              display_name = last_line
+            end
+          elseif window_name and window_name ~= "" then
+            display_name = window_name
+          else
+            display_name = "Claude instance"
+          end
+          
           table.insert(instances, {
             pane_id = pane_id,
             session = session,
@@ -235,7 +260,8 @@ function M.get_claude_code_instances(git_root)
             command = command,
             is_current_session = is_current_session,
             detection_method = detection_method,
-            display = string.format("%s: %s.%s (%s) %s", session, window_idx, pane_idx, window_name, detection_method)
+            last_line = last_line,
+            display = string.format("%s: %s.%s (%s) %s", session, window_idx, pane_idx, display_name, detection_method)
           })
         else
           debug.log("Pane " .. pane_id .. " is in git root but not running Claude - skipping")
@@ -353,6 +379,20 @@ function M.get_claude_code_instances(git_root)
               detection_method = "[name]"
             end
             
+            -- Store the last line of conversation before the prompt for display purposes
+            local last_line_cmd = string.format(
+              [[tmux capture-pane -p -t %s | grep -B 1 -m 1 -e '╭─\{1,\}╮' | grep -v '╭─\{1,\}╮' | grep -v '^$' | tail -n 1]],
+              pane_id
+            )
+            local last_line = vim.fn.system(last_line_cmd):gsub("%s+$", "")
+            if last_line and last_line ~= "" then
+              -- Keep only first 40 chars for display
+              if #last_line > 40 then
+                last_line = string.sub(last_line, 1, 37) .. "..."
+              end
+              debug.log("AGGRESSIVE MODE: Found last conversation line: " .. last_line)
+            end
+            
             -- Check if we found it through process detection methods
             local process_cmd = string.format(
               "ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", 
@@ -375,6 +415,16 @@ function M.get_claude_code_instances(git_root)
               detection_method = "[prompt]"
             end
             
+            -- Determine display name
+            local display_name
+            if last_line and last_line ~= "" then
+              display_name = last_line
+            elseif window_name and window_name ~= "" then
+              display_name = window_name
+            else
+              display_name = "Claude instance"
+            end
+            
             table.insert(instances, {
               pane_id = pane_id,
               session = session,
@@ -384,7 +434,8 @@ function M.get_claude_code_instances(git_root)
               command = command,
               is_current_session = is_current_session,
               detection_method = detection_method,
-              display = string.format("%s: %s.%s (%s) %s", session, window_idx, pane_idx, window_name, detection_method)
+              last_line = last_line,
+              display = string.format("%s: %s.%s (%s) %s", session, window_idx, pane_idx, display_name, detection_method)
             })
             debug.log("AGGRESSIVE MODE: Added Claude instance: " .. pane_id)
           else
@@ -661,36 +712,45 @@ function M.with_claude_code_instance(git_root, callback)
                 ", Command: " .. (pane_cmd or "nil") .. 
                 ", Path: " .. (pane_path or "nil"))
       
-      -- Get a sample of content from the pane
-      local content_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -v '^$' | head -n 3",
-        instance.pane_id
-      )
-      local content_sample = vim.fn.system(content_cmd):gsub("%s+$", "")
-      
       -- Determine a good display name
       local display_name
       
-      -- First priority: Use pane title if it's set and meaningful
-      if pane_title and pane_title ~= "" and pane_title ~= "zsh" and pane_title ~= "bash" then
-        display_name = pane_title
-      -- Second priority: Use a good summary of the first few lines
-      elseif content_sample and content_sample ~= "" then
-        -- Extract first line
-        local first_line = content_sample:match("^[^\n]+") or ""
-        
+      -- First priority: Use stored last line if available
+      if instance.last_line and instance.last_line ~= "" then
         -- Keep only first 40 chars
-        if #first_line > 40 then
-          first_line = string.sub(first_line, 1, 37) .. "..."
+        if #instance.last_line > 40 then
+          display_name = string.sub(instance.last_line, 1, 37) .. "..."
+        else
+          display_name = instance.last_line
         end
-        
-        display_name = first_line
-      -- Third priority: Use window name
-      elseif window_name and window_name ~= "" then
-        display_name = window_name
-      -- Last resort: Just use Claude
+        debug.log("Using stored last line as display name: " .. display_name)
+      -- If not available, get it from the pane now
       else
-        display_name = "Claude instance"
+        -- This is the most useful context for identifying what the Claude session is about
+        local last_line_cmd = string.format(
+          [[tmux capture-pane -p -t %s | grep -B 1 -m 1 -e '╭─\{1,\}╮' | grep -v '╭─\{1,\}╮' | grep -v '^$' | tail -n 1]],
+          instance.pane_id
+        )
+        local last_line = vim.fn.system(last_line_cmd):gsub("%s+$", "")
+        
+        if last_line and last_line ~= "" then
+          -- Keep only first 40 chars
+          if #last_line > 40 then
+            last_line = string.sub(last_line, 1, 37) .. "..."
+          end
+          
+          display_name = last_line
+          debug.log("Using last line before prompt as display name: " .. display_name)
+        -- Second priority: Use pane title if it's set and meaningful
+        elseif pane_title and pane_title ~= "" and pane_title ~= "zsh" and pane_title ~= "bash" then
+          display_name = pane_title
+        -- Third priority: Use window name
+        elseif window_name and window_name ~= "" then
+          display_name = window_name
+        -- Last resort: Just use Claude
+        else
+          display_name = "Claude instance"
+        end
       end
       
       -- Add command info for extra context if not already in the name
