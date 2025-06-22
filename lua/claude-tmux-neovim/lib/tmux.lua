@@ -445,8 +445,8 @@ function M.with_claude_code_instance(git_root, callback)
         local temp_file = os.tmpname()
         local file = io.open(temp_file, "w")
         if file then
-          -- Simplified prompt for speed - ask for an extremely concise summary
-          local prompt = "Summarize in 4-5 words: " .. content
+          -- Very simple prompt for speed - ask for an extremely concise summary
+          local prompt = "Summarize in 5 words: " .. content
           file:write(prompt)
           file:close()
           content_files[i] = temp_file
@@ -459,24 +459,72 @@ function M.with_claude_code_instance(git_root, callback)
     
     -- If timeout > 0, try to use Claude for AI summaries
     if summary_timeout > 0 then
-      -- Run Claude to generate summaries with timeout
+      -- Run Claude to generate summaries
       for i, content_file in pairs(content_files) do
         if content_file and summary_files[i] then
-          -- Use timeout command to limit execution time
-          local timeout_value = math.floor(summary_timeout)
-          local timeout_fraction = math.floor((summary_timeout - timeout_value) * 10)
-          local timeout_str = string.format("%d.%d", timeout_value, timeout_fraction)
+          -- Create a cross-platform timeout using background process and kill
+          debug.log("Starting AI summary generation for instance " .. i)
           
+          -- Command to run claude and generate summary
+          -- Use a much shorter prompt for speed and reduce output overhead
           local claude_cmd = string.format(
-            "timeout %s %s --print --system-prompt \"You provide extremely concise 4-5 word summaries. No explanation.\" < %s > %s 2>/dev/null", 
-            timeout_str,
+            "%s --print --system-prompt \"Generate only 4-5 words.\" < %s > %s 2>/dev/null", 
             config.get().claude_code_cmd,
             content_file,
             summary_files[i]
           )
           
-          -- Run with timeout
-          vim.fn.system(claude_cmd)
+          -- Use a platform-independent approach for timeouts (macOS compatible)
+          -- Create a script to run the command with timeout
+          local timeout_script = os.tmpname()
+          local script = io.open(timeout_script, "w")
+          
+          if script then
+            -- Write script with timeout logic
+            script:write("#!/bin/bash\n\n")
+            
+            -- Start the command in background and remember its PID
+            script:write(claude_cmd .. " & \n")
+            script:write("PID=$!\n\n")
+            
+            -- Convert timeout to integer seconds and fraction
+            local timeout_int = math.floor(summary_timeout)
+            local timeout_fraction = math.floor((summary_timeout - timeout_int) * 10)
+            
+            -- Wait specified seconds
+            if timeout_int > 0 then
+              script:write("sleep " .. timeout_int .. "\n")
+            end
+            
+            -- Wait fraction of a second if needed
+            if timeout_fraction > 0 then
+              script:write("sleep 0." .. timeout_fraction .. "\n")
+            end
+            
+            -- Check if process is still running and kill if it is
+            script:write("if kill -0 $PID 2>/dev/null; then\n")
+            script:write("  kill $PID 2>/dev/null\n")
+            script:write("  echo \"Timeout reached, killed process\"\n")
+            script:write("fi\n")
+            
+            -- Wait for any remaining processes to complete
+            script:write("wait 2>/dev/null\n")
+            script:close()
+            
+            -- Make script executable
+            vim.fn.system("chmod +x " .. timeout_script)
+            
+            -- Run the script
+            debug.log("Running AI summary generation with timeout " .. summary_timeout .. "s")
+            vim.fn.system(timeout_script)
+            
+            -- Clean up script
+            os.remove(timeout_script)
+          else
+            -- Fallback: just run command directly without timeout if script creation fails
+            debug.log("Failed to create timeout script, running claude directly")
+            vim.fn.system(claude_cmd)
+          end
         end
       end
     end
@@ -488,15 +536,23 @@ function M.with_claude_code_instance(git_root, callback)
       
       -- Try to read from summary file if it exists (AI generated summary)
       if summary_timeout > 0 and summary_files[i] then
+        debug.log("Checking for AI summary for instance " .. i .. " in file " .. summary_files[i])
         local file = io.open(summary_files[i], "r")
         if file then
           local content = file:read("*all")
           file:close()
+          
+          debug.log("Summary file content length: " .. #(content or ""))
+          
           if content and content ~= "" then
             -- Got an AI summary
             summary = vim.trim(content)
-            debug.log("AI summary for instance " .. i .. ": " .. summary)
+            debug.log("AI summary found for instance " .. i .. ": " .. summary)
+          else
+            debug.log("No AI summary generated for instance " .. i .. " - file was empty")
           end
+        else
+          debug.log("Could not open summary file for instance " .. i)
         end
       end
       
