@@ -514,37 +514,68 @@ function M.create_claude_code_instance(git_root, use_continue)
   -- Create a new window for Claude Code
   -- Use a consistent window name to help with detection
   local window_name = "claude"
-  local cmd = string.format("tmux new-window -d -n %s 'cd %s && %s'", 
+  debug.log("Creating new Claude window with command: " .. claude_cmd)
+  
+  -- Create the new window and capture its index immediately
+  local create_cmd = string.format("tmux new-window -d -n %s -P -F '#{window_index}' 'cd %s && %s'", 
     window_name, vim.fn.shellescape(git_root), claude_cmd)
   
-  local result = vim.fn.system(cmd)
-  if vim.v.shell_error ~= 0 then
+  debug.log("Running command: " .. create_cmd)
+  local new_window_idx = vim.fn.system(create_cmd)
+  new_window_idx = vim.trim(new_window_idx)
+  
+  if vim.v.shell_error ~= 0 or new_window_idx == "" then
     vim.notify("Failed to create Claude Code instance", vim.log.levels.ERROR)
+    debug.log("Failed to create window, error code: " .. vim.v.shell_error)
     return nil
   end
+  
+  debug.log("Successfully created new window with index: " .. new_window_idx)
   
   -- Give it time to start
   vim.fn.system("sleep 0.5")
   
-  -- Get the new window index
-  local new_window_idx = vim.fn.system("tmux list-windows -t " .. vim.fn.shellescape(current_session) .. 
-                                      " | grep " .. window_name .. " | cut -d: -f1")
-  new_window_idx = vim.trim(new_window_idx)
+  -- Verify the window still exists and has expected name
+  local verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:' | grep '%s'", 
+                                        vim.fn.shellescape(current_session), new_window_idx, window_name)
+  local window_verify = vim.fn.system(verify_window_cmd)
   
-  if new_window_idx == "" then
-    vim.notify("Failed to get new Claude Code window index", vim.log.levels.ERROR)
-    return nil
+  if vim.trim(window_verify) == "" then
+    debug.log("WARNING: Could not verify new window with name '" .. window_name .. "'")
+    -- Try without name check
+    verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:'", 
+                                     vim.fn.shellescape(current_session), new_window_idx)
+    window_verify = vim.fn.system(verify_window_cmd)
+    
+    if vim.trim(window_verify) == "" then
+      vim.notify("Failed to verify new Claude Code window", vim.log.levels.ERROR)
+      return nil
+    else
+      debug.log("Window exists but may have unexpected name: " .. vim.trim(window_verify))
+    end
+  else
+    debug.log("Successfully verified window exists with correct name")
   end
   
   -- Get the pane ID
-  local pane_id = vim.fn.system("tmux list-panes -t " .. vim.fn.shellescape(current_session) .. 
-                               ":" .. new_window_idx .. " -F '#{pane_id}'")
-  pane_id = vim.trim(pane_id)
+  local pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id},#{pane_active},#{pane_current_command}'", 
+                               vim.fn.shellescape(current_session), new_window_idx)
+  debug.log("Running pane query: " .. pane_cmd)
+  local pane_output = vim.fn.system(pane_cmd)
   
-  if pane_id == "" then
+  -- Log full pane details for debugging
+  debug.log("Pane details: " .. vim.trim(pane_output))
+  
+  -- Extract the pane ID from output
+  local pane_id = vim.trim(pane_output):match("(%%[0-9]+)")
+  
+  if not pane_id or pane_id == "" then
     vim.notify("Failed to get new Claude Code pane ID", vim.log.levels.ERROR)
+    debug.log("Failed to extract pane ID from: " .. pane_output)
     return nil
   end
+  
+  debug.log("Using pane ID: " .. pane_id)
   
   -- Return the instance info
   return {
@@ -627,24 +658,59 @@ function M.send_to_claude_code(instance, context)
   
   -- Switch to pane if enabled
   if config.get().auto_switch_pane then
+    -- Verify the pane still exists before attempting to switch
+    local verify_pane_cmd = string.format('tmux has-session -t %s 2>/dev/null && echo "exists" || echo "missing"', 
+                                         instance.pane_id)
+    local pane_exists = vim.trim(vim.fn.system(verify_pane_cmd))
+    
+    if pane_exists ~= "exists" then
+      debug.log("WARNING: Pane " .. instance.pane_id .. " no longer exists!")
+      
+      -- Try to find the pane by window index instead
+      local find_pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
+                                         instance.session, instance.window_idx)
+      local alternative_pane = vim.trim(vim.fn.system(find_pane_cmd))
+      
+      if alternative_pane ~= "" then
+        debug.log("Found alternative pane in same window: " .. alternative_pane)
+        instance.pane_id = alternative_pane
+      else
+        debug.log("Could not find any pane in window " .. instance.window_idx)
+        vim.notify("Cannot switch to Claude pane - pane no longer exists", vim.log.levels.WARN)
+        return true -- Still return success since we sent the content
+      end
+    end
+    
     -- For new instances, add a brief delay before switching to ensure everything is ready
     if instance.detection_method == "[new]" then
       debug.log("New instance detected, adding small delay before switching")
       vim.fn.system("sleep 0.3")
     end
     
-    -- Select the pane
-    local switch_cmd = string.format('tmux select-pane -t %s 2>/dev/null', instance.pane_id)
-    vim.fn.system(switch_cmd)
-    
-    -- Also focus the tmux window to ensure switching works correctly
-    local window_cmd = string.format('tmux select-window -t %s:%s 2>/dev/null', 
-                                     instance.session, instance.window_idx)
+    -- First focus the window to ensure we're in the right context
+    local window_cmd = string.format('tmux select-window -t %s:%s', 
+                                    instance.session, instance.window_idx)
+    debug.log("Selecting window with: " .. window_cmd)
     vim.fn.system(window_cmd)
     
-    -- For new instances, ensure the window is fully activated by sending a redundant window select
+    -- Then select the pane
+    local switch_cmd = string.format('tmux select-pane -t %s', instance.pane_id)
+    debug.log("Selecting pane with: " .. switch_cmd)
+    local switch_result = vim.fn.system(switch_cmd)
+    
+    if vim.v.shell_error ~= 0 then
+      debug.log("Failed to switch to pane: " .. (switch_result or ""))
+      
+      -- Try alternative approach with session:window.pane format
+      switch_cmd = string.format('tmux select-pane -t %s:%s.%s', 
+                                instance.session, instance.window_idx, instance.pane_idx)
+      debug.log("Trying alternative pane selection: " .. switch_cmd)
+      vim.fn.system(switch_cmd)
+    end
+    
+    -- For new instances, ensure the window is fully activated with a second attempt
     if instance.detection_method == "[new]" then
-      debug.log("Ensuring window activation for new instance")
+      debug.log("Ensuring window activation for new instance with second attempt")
       vim.fn.system(window_cmd)
     end
   end
