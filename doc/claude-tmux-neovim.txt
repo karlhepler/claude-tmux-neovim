@@ -299,7 +299,7 @@ The debug log is stored at:
   - [cmd]: Direct match with the Claude Code command name
   - [path]: Path-based match with the Claude Code command
   - [node]: Node.js process running Claude Code
-  - [content]: Claude Code identified by content markers (Human/Claude conversation)
+  - [prompt]: Claude Code identified by distinctive prompt line (╭────╮ with │ > below it)
   - [proc]: Identified through process command line or environment variables
   - [name]: Identified by window name containing "claude"
   - [other]: Other detection method

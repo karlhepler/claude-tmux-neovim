@@ -98,17 +98,16 @@ function M.get_claude_code_instances(git_root)
           end
         end
       end
-    -- Method 4: Check content for Claude indicators regardless of process
+    -- Method 4: Check for Claude prompt line regardless of process
     else
-      -- Check content of the pane for Claude indicators
-      local content_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", pane_id)
-      local content = vim.fn.system(content_cmd)
-      
-      if content:lower():match("claude") or 
-         content:match("anthropic") or 
-         content:match("You are Claude") or
-         content:match("Human:") then
-        debug.log("Pane content suggests Claude Code despite command: " .. command)
+      -- Check for the distinctive Claude prompt line
+      local content_cmd = string.format(
+        "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
+        pane_id
+      )
+      local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+      if content_check and content_check ~= "" then
+        debug.log("Pane has distinctive Claude prompt line despite command: " .. command)
         is_claude = true
       end
     end
@@ -129,15 +128,16 @@ function M.get_claude_code_instances(git_root)
         -- Double-check that this is actually Claude Code
         local is_actually_claude = false
         
-        -- Verify it's Claude by checking pane content for Claude markers
+        -- Verify it's Claude by checking for the distinctive Claude prompt line
+        -- Active Claude sessions have a horizontal line with a prompt indicator below it
         local content_check_cmd = string.format(
-          "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human' -e 'anthropic' -e 'You are Claude'", 
+          "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
           pane_id
         )
         local content_check = vim.fn.system(content_check_cmd):gsub("%s+$", "")
         if content_check and content_check ~= "" then
           is_actually_claude = true
-          debug.log("Confirmed Claude Code by content: " .. pane_id)
+          debug.log("Confirmed Claude Code by distinctive prompt line: " .. pane_id)
         end
         
         -- More thorough process checking with ps
@@ -205,14 +205,14 @@ function M.get_claude_code_instances(git_root)
           
           -- Then check which verification passed to prioritize that
           if is_actually_claude then
-            -- If we verified with content, show that (most reliable)
+            -- If we verified with the Claude prompt line, show that (most reliable)
             local content_cmd = string.format(
-              "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human:' -e 'anthropic' -e 'You are Claude'", 
+              "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
               pane_id
             )
             local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
             if content_check and content_check ~= "" then
-              detection_method = "[content]"
+              detection_method = "[prompt]"
             end
             
             -- Or if we verified with process details
@@ -283,16 +283,16 @@ function M.get_claude_code_instances(git_root)
             debug.log("AGGRESSIVE MODE: Window name contains 'claude': " .. window_name)
           end
           
-          -- Method 2: Thorough content check for Claude markers
+          -- Method 2: Check for the distinctive Claude prompt line
           if not is_actually_claude then
             local content_cmd = string.format(
-              "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human:' -e 'anthropic' -e 'You are Claude'", 
+              "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
               pane_id
             )
             local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
             if content_check and content_check ~= "" then
               is_actually_claude = true
-              debug.log("AGGRESSIVE MODE: Found Claude content markers: " .. pane_id)
+              debug.log("AGGRESSIVE MODE: Confirmed Claude Code by distinctive prompt line: " .. pane_id)
             end
           end
           
@@ -365,14 +365,14 @@ function M.get_claude_code_instances(git_root)
               detection_method = "[proc]"
             end
             
-            -- Content detection gets priority since it's most reliable
+            -- Prompt line detection gets priority since it's most reliable
             local content_cmd = string.format(
-              "tmux capture-pane -p -t %s | grep -e 'Claude' -e 'Human:' -e 'anthropic' -e 'You are Claude'", 
+              "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
               pane_id
             )
             local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
             if content_check and content_check ~= "" then
-              detection_method = "[content]"
+              detection_method = "[prompt]"
             end
             
             table.insert(instances, {
