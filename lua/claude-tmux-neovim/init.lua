@@ -48,8 +48,8 @@ function M.create_new_instance()
     return
   end
   
-  -- Create a new instance
-  local new_instance = tmux.create_claude_code_instance(git_root)
+  -- Create a new instance with plain "claude" command (no flags)
+  local new_instance = tmux.create_claude_code_instance(git_root, false)
   
   -- Set as remembered instance if created successfully
   if new_instance and config.get().remember_choice then

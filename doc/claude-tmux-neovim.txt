@@ -181,7 +181,7 @@ helping Claude Code focus on the specific portion you need help with.
     Send the current file context to Claude Code.
 
 *:ClaudeCodeNew*
-    Create a new Claude Code instance.
+    Create a new Claude Code instance. Always uses plain "claude" command without flags.
 
 *:ClaudeCodeReset*
     Reset all remembered Claude Code instances.

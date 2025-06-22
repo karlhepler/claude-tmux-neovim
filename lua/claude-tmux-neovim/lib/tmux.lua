@@ -457,8 +457,9 @@ end
 
 --- Create a new Claude Code instance in a new tmux window
 ---@param git_root string The git repository root path
+---@param use_continue boolean|nil Whether to use the full command with flags (for continue mode)
 ---@return table|nil instance The new Claude Code instance or nil if failed
-function M.create_claude_code_instance(git_root)
+function M.create_claude_code_instance(git_root, use_continue)
   if not git_root then
     vim.notify("Not in a git repository", vim.log.levels.ERROR)
     return nil
@@ -468,9 +469,21 @@ function M.create_claude_code_instance(git_root)
   local current_session = vim.fn.system("tmux display-message -p '#{session_name}'")
   current_session = vim.trim(current_session)
   
+  -- Choose the appropriate command based on the use_continue flag
+  local claude_cmd
+  if use_continue then
+    -- For automatic instance creation (when sending context and no instance exists)
+    -- use the full command with flags
+    claude_cmd = config.get().claude_code_cmd
+  else
+    -- For explicit new instance creation (via <leader>cn or :ClaudeCodeNew)
+    -- use just "claude" without any flags
+    claude_cmd = "claude"
+  end
+  
   -- Create a new window for Claude Code
   local cmd = string.format("tmux new-window -d -n claude-code 'cd %s && %s'", 
-    vim.fn.shellescape(git_root), config.get().claude_code_cmd)
+    vim.fn.shellescape(git_root), claude_cmd)
   
   local result = vim.fn.system(cmd)
   if vim.v.shell_error ~= 0 then
@@ -508,7 +521,7 @@ function M.create_claude_code_instance(git_root)
     window_name = "claude-code",
     window_idx = new_window_idx,
     pane_idx = "0",
-    command = config.get().claude_code_cmd,
+    command = claude_cmd, -- Use the plain "claude" command instead of config.get().claude_code_cmd
     detection_method = "[new]",
     display = string.format("%s: %s.0 (claude-code) [new]", current_session, new_window_idx)
   }
@@ -628,8 +641,9 @@ function M.with_claude_code_instance(git_root, callback)
   end
   
   if #instances == 0 then
-    -- Create new instance silently if none found
-    local new_instance = M.create_claude_code_instance(git_root)
+    -- Create new instance silently if none found using claude --continue flag
+    -- When creating via get_claude_code_instances, we want to use the full command with flags
+    local new_instance = M.create_claude_code_instance(git_root, true) -- Pass true to indicate using the full command
     if new_instance then
       if config.get().remember_choice then
         config.set_remembered_instance(git_root, new_instance)
