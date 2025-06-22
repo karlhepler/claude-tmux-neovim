@@ -37,7 +37,7 @@ function M.reset_instances()
   end)
 end
 
---- Create a new Claude Code instance
+--- Create a new Claude Code instance and send context
 function M.create_new_instance()
   -- Get git root
   local git_root = util.get_git_root()
@@ -54,6 +54,19 @@ function M.create_new_instance()
   -- Set as remembered instance if created successfully
   if new_instance and config.get().remember_choice then
     config.set_remembered_instance(git_root, new_instance)
+  end
+  
+  -- If instance was created successfully, send context to it
+  if new_instance then
+    -- Create context payload
+    local context_data = context.create_context({})
+    if context_data then
+      -- Format context as XML
+      local xml = context.format_context_xml(context_data)
+      
+      -- Send to the new Claude Code instance
+      tmux.send_to_claude_code(new_instance, xml)
+    end
   end
 end
 

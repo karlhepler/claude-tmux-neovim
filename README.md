@@ -15,7 +15,7 @@ This plugin acts as a bridge between your Neovim editor and Claude Code running 
 ## Features
 
 - Press `<leader>cc` to send context to Claude Code (uses `claude --continue` when auto-creating instances)
-- Press `<leader>cn` to create a new Claude Code instance (always uses plain `claude` without flags)
+- Press `<leader>cn` to create a new Claude Code instance and send context (always uses plain `claude` without flags)
 - Works with visual selections for more targeted assistance
 - Git repository isolation - only shows Claude Code instances in the same git repository
 - Smart instance management:
@@ -138,7 +138,7 @@ In visual mode, only your selected code will be included in the XML context, hel
 ## Commands
 
 - `:ClaudeCodeSend` - Send the current file context to Claude Code.
-- `:ClaudeCodeNew` - Create a new Claude Code instance (always uses plain `claude` command).
+- `:ClaudeCodeNew` - Create a new Claude Code instance and send context (always uses plain `claude` command).
 - `:ClaudeCodeReset` - Reset all remembered Claude Code instances.
 - `:ClaudeCodeResetGit` - Reset the remembered Claude Code instance for the current git repository.
 - `:ClaudeCodeReload` - Manually reload all Neovim buffers from disk.

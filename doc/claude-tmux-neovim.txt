@@ -32,7 +32,7 @@ maintaining your preferred environment.
 2. FEATURES                                    *claude-tmux-neovim-features*
 
 - Send code context to Claude Code with a single keystroke (`<leader>cc`)
-- Create new Claude Code instances with a dedicated shortcut (`<leader>cn`)
+- Create new Claude Code instances and send context with a dedicated shortcut (`<leader>cn`)
 - Works with visual selections for more targeted assistance
 - Git repository isolation - only shows Claude Code instances in the same repo
 - Smart instance management:
@@ -181,7 +181,7 @@ helping Claude Code focus on the specific portion you need help with.
     Send the current file context to Claude Code.
 
 *:ClaudeCodeNew*
-    Create a new Claude Code instance. Always uses plain "claude" command without flags.
+    Create a new Claude Code instance and send context. Always uses plain "claude" command without flags.
 
 *:ClaudeCodeReset*
     Reset all remembered Claude Code instances.
