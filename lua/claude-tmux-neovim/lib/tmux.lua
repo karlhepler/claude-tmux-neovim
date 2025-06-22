@@ -569,6 +569,12 @@ function M.send_to_claude_code(instance, context)
     return false
   end
   
+  -- For new instances, add a brief delay to ensure Claude is ready to accept input
+  if instance.detection_method == "[new]" then
+    debug.log("New instance detected, adding extra delay to ensure readiness")
+    vim.fn.system("sleep 1.0")
+  end
+  
   -- Create temp file with context
   local temp_file = os.tmpname()
   local file = io.open(temp_file, "w")
@@ -591,20 +597,43 @@ function M.send_to_claude_code(instance, context)
     return false
   end
   
-  -- Paste content buffer into target pane (silently)
-  local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s 2>/dev/null', instance.pane_id)
-  vim.fn.system(paste_cmd)
+  -- Paste content buffer into target pane with retry logic
+  local max_retries = 3
+  local success = false
+  
+  for retry = 1, max_retries do
+    -- Paste content buffer into target pane (silently)
+    local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s 2>/dev/null', instance.pane_id)
+    vim.fn.system(paste_cmd)
+    
+    if vim.v.shell_error == 0 then
+      success = true
+      debug.log("Successfully pasted context on attempt " .. retry)
+      break
+    else
+      debug.log("Paste attempt " .. retry .. " failed, retrying after delay...")
+      -- Increase delay with each retry
+      vim.fn.system("sleep " .. retry * 0.5)
+    end
+  end
   
   -- Clean up temp file
   os.remove(temp_file)
   
-  if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to paste context into Claude Code pane", vim.log.levels.ERROR)
+  if not success then
+    vim.notify("Failed to paste context into Claude Code pane after " .. max_retries .. " attempts", vim.log.levels.ERROR)
     return false
   end
   
   -- Switch to pane if enabled
   if config.get().auto_switch_pane then
+    -- For new instances, add a brief delay before switching to ensure everything is ready
+    if instance.detection_method == "[new]" then
+      debug.log("New instance detected, adding small delay before switching")
+      vim.fn.system("sleep 0.3")
+    end
+    
+    -- Select the pane
     local switch_cmd = string.format('tmux select-pane -t %s 2>/dev/null', instance.pane_id)
     vim.fn.system(switch_cmd)
     
@@ -612,6 +641,12 @@ function M.send_to_claude_code(instance, context)
     local window_cmd = string.format('tmux select-window -t %s:%s 2>/dev/null', 
                                      instance.session, instance.window_idx)
     vim.fn.system(window_cmd)
+    
+    -- For new instances, ensure the window is fully activated by sending a redundant window select
+    if instance.detection_method == "[new]" then
+      debug.log("Ensuring window activation for new instance")
+      vim.fn.system(window_cmd)
+    end
   end
   
   return true
