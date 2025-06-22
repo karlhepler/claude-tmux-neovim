@@ -534,8 +534,8 @@ function M.create_claude_code_instance(git_root, use_continue)
   
   debug.log("Successfully created new window with index: " .. new_window_idx)
   
-  -- Give it time to start
-  vim.fn.system("sleep 0.5")
+  -- Give it time to start - increased from 0.5 to 2.0 seconds for slow Claude initialization
+  vim.fn.system("sleep 2.0")
   
   -- Verify the window still exists and has expected name
   local verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:' | grep '%s'", 
