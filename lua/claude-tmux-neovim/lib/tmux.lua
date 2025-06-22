@@ -54,62 +54,45 @@ function M.get_claude_code_instances(git_root)
     -- Step 3: Check if this is potentially a Claude Code pane
     local is_claude = false
     
-    -- Method 1: Check the command name directly (most reliable)
-    if command == claude_code_cmd then
+    -- Method 1: Check window name first (now the primary detection method)
+    if window_name:lower() == "claude" then
+      debug.log("Window name is 'claude', likely Claude Code: " .. window_name)
+      is_claude = true
+    -- Method 2: Check the command name directly 
+    elseif command == claude_code_cmd then
       debug.log("Found exact command match: '" .. command .. "' == '" .. claude_code_cmd .. "'")
       is_claude = true
-    -- Method 2: Check if the command path ends with the claude command name
+    -- Method 3: Check if the command path ends with the claude command name
     elseif command:match("/" .. claude_code_cmd .. "$") then
       debug.log("Found path-based command match: '" .. command .. "' ends with '/" .. claude_code_cmd .. "'")
       is_claude = true
-    -- Method 3: For shell wrappers - check if it's a node.js process running claude code
+    -- Method 4: For shell wrappers - check if it's a node.js process running claude code
     elseif command == "node" or command == "node.js" or command:match("node") then
       debug.log("Found Node.js process in pane " .. pane_id)
       
-      -- Special case for Claude Code which often runs as a Node.js process
-      -- First, check the window name (often contains "claude" for Claude Code)
-      if window_name:lower():match("claude") then
-        debug.log("Window name contains 'claude', assuming Claude Code: " .. window_name)
-        is_claude = true
-      else
-        -- Try to get process information for the Node.js process
-        local ps_cmd = string.format("ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", pane_id)
-        debug.log("Running ps command: " .. ps_cmd)
-        local ps_output = vim.fn.system(ps_cmd):gsub("%s+$", "")
-        debug.log("Process command line: " .. ps_output)
-        
-        -- Check for Claude Code indicators in the process command line
-        if ps_output:lower():match("claude") then
-          debug.log("Process command line contains 'claude', assuming Claude Code")
-          is_claude = true
-        else
-          -- Examine pane content to check if it's Claude Code
-          local content_cmd = string.format("tmux capture-pane -p -t %s | grep -v '^$' | head -n 10", pane_id)
-          local content = vim.fn.system(content_cmd)
-          
-          if content:lower():match("claude") or 
-             content:match("anthropic") or 
-             content:match("You are Claude") or
-             content:match("Human:") then
-            debug.log("Pane content suggests Claude Code")
-            is_claude = true
-          -- REMOVED: Don't assume Node.js in git root is Claude Code
-          -- This was causing false positives
-          end
-        end
-      end
-    -- Method 4: Check for Claude prompt line regardless of process
-    else
-      -- Check for the distinctive Claude prompt line
-      local content_cmd = string.format(
-        "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
-        pane_id
-      )
-      local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
-      if content_check and content_check ~= "" then
-        debug.log("Pane has distinctive Claude prompt line despite command: " .. command)
+      -- Try to get process information for the Node.js process
+      local ps_cmd = string.format("ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", pane_id)
+      debug.log("Running ps command: " .. ps_cmd)
+      local ps_output = vim.fn.system(ps_cmd):gsub("%s+$", "")
+      debug.log("Process command line: " .. ps_output)
+      
+      -- Check for Claude Code indicators in the process command line
+      if ps_output:lower():match("claude") then
+        debug.log("Process command line contains 'claude', assuming Claude Code")
         is_claude = true
       end
+    end
+    
+    -- Method 5: Always verify with content check (prompt line) regardless of other methods
+    -- Even if we already think it's Claude, let's verify with content
+    local content_cmd = string.format(
+      "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
+      pane_id
+    )
+    local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+    if content_check and content_check ~= "" then
+      debug.log("Pane has distinctive Claude prompt line: " .. pane_id)
+      is_claude = true
     end
     
     -- Step 4: If it's a Claude Code pane, check if it's EXACTLY in the git root
@@ -128,7 +111,13 @@ function M.get_claude_code_instances(git_root)
         -- Double-check that this is actually Claude Code
         local is_actually_claude = false
         
-        -- Verify it's Claude by checking for the distinctive Claude prompt line
+        -- Method 1: Check window name first (highest priority)
+        if window_name:lower() == "claude" then
+          is_actually_claude = true
+          debug.log("Confirmed Claude Code by exact window name 'claude': " .. pane_id)
+        end
+        
+        -- Method 2: Verify by checking for the distinctive Claude prompt line
         -- Active Claude sessions have a horizontal line with a prompt indicator below it
         local content_check_cmd = string.format(
           "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
@@ -303,26 +292,24 @@ function M.get_claude_code_instances(git_root)
           -- Double-check that this is actually Claude Code using multiple verification methods
           local is_actually_claude = false
           
-          -- Method 1: Check window name for Claude indicators
-          if window_name:lower():match("claude") then
+          -- Method 1: Check window name first (prioritized method)
+          if window_name:lower() == "claude" then
             is_actually_claude = true
-            debug.log("AGGRESSIVE MODE: Window name contains 'claude': " .. window_name)
+            debug.log("AGGRESSIVE MODE: Window name is exactly 'claude': " .. window_name)
           end
           
-          -- Method 2: Check for the distinctive Claude prompt line
-          if not is_actually_claude then
-            local content_cmd = string.format(
-              "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
-              pane_id
-            )
-            local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
-            if content_check and content_check ~= "" then
-              is_actually_claude = true
-              debug.log("AGGRESSIVE MODE: Confirmed Claude Code by distinctive prompt line: " .. pane_id)
-            end
+          -- Method 2: Check for the distinctive Claude prompt line (always check this regardless)
+          local content_cmd = string.format(
+            "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
+            pane_id
+          )
+          local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+          if content_check and content_check ~= "" then
+            is_actually_claude = true
+            debug.log("AGGRESSIVE MODE: Confirmed Claude Code by distinctive prompt line: " .. pane_id)
           end
           
-          -- Method 3: Enhanced process detection
+          -- Method 3: Enhanced process detection (as fallback)
           if not is_actually_claude then
             -- Check full command line (including arguments) for claude markers
             local process_cmd = string.format(
@@ -482,8 +469,10 @@ function M.create_claude_code_instance(git_root, use_continue)
   end
   
   -- Create a new window for Claude Code
-  local cmd = string.format("tmux new-window -d -n claude-code 'cd %s && %s'", 
-    vim.fn.shellescape(git_root), claude_cmd)
+  -- Use a consistent window name to help with detection
+  local window_name = "claude"
+  local cmd = string.format("tmux new-window -d -n %s 'cd %s && %s'", 
+    window_name, vim.fn.shellescape(git_root), claude_cmd)
   
   local result = vim.fn.system(cmd)
   if vim.v.shell_error ~= 0 then
@@ -496,7 +485,7 @@ function M.create_claude_code_instance(git_root, use_continue)
   
   -- Get the new window index
   local new_window_idx = vim.fn.system("tmux list-windows -t " .. vim.fn.shellescape(current_session) .. 
-                                      " | grep claude-code | cut -d: -f1")
+                                      " | grep " .. window_name .. " | cut -d: -f1")
   new_window_idx = vim.trim(new_window_idx)
   
   if new_window_idx == "" then
@@ -518,12 +507,12 @@ function M.create_claude_code_instance(git_root, use_continue)
   return {
     pane_id = pane_id,
     session = current_session,
-    window_name = "claude-code",
+    window_name = window_name,
     window_idx = new_window_idx,
     pane_idx = "0",
-    command = claude_cmd, -- Use the plain "claude" command instead of config.get().claude_code_cmd
+    command = claude_cmd, -- Use the appropriate command based on use_continue
     detection_method = "[new]",
-    display = string.format("%s: %s.0 (claude-code) [new]", current_session, new_window_idx)
+    display = string.format("%s: %s.0 (%s) [new]", current_session, new_window_idx, window_name)
   }
 end
 
