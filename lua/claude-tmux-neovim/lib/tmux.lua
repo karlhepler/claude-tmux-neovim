@@ -546,27 +546,9 @@ function M.send_to_claude_code(instance, context)
     return false
   end
   
-  -- Write newlines to a temporary buffer
-  local newline_file = os.tmpname()
-  local newline_handle = io.open(newline_file, "w")
-  if newline_handle then
-    -- Write 5 newlines to ensure enough space
-    newline_handle:write("\n\n\n\n\n")
-    newline_handle:close()
-    
-    -- Load newlines into a separate buffer
-    local load_newlines_cmd = string.format('tmux load-buffer -b claude_newlines %s 2>/dev/null', newline_file)
-    vim.fn.system(load_newlines_cmd)
-    os.remove(newline_file)
-  end
-
   -- Paste content buffer into target pane (silently)
   local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s 2>/dev/null', instance.pane_id)
   vim.fn.system(paste_cmd)
-  
-  -- Then paste the newlines buffer
-  local paste_newlines_cmd = string.format('tmux paste-buffer -b claude_newlines -t %s 2>/dev/null', instance.pane_id)
-  vim.fn.system(paste_newlines_cmd)
   
   -- Clean up temp file
   os.remove(temp_file)
