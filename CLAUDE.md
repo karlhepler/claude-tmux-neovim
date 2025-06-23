@@ -8,15 +8,27 @@ Claude-tmux-neovim is a Neovim plugin that seamlessly integrates with Claude Cod
 
 ## Architecture
 
-The plugin uses a modular architecture:
+The plugin uses a modular architecture with recent refactoring for improved maintainability:
 
-- `init.lua` - Main entry point with public API
-- `lib/config.lua` - Configuration management and state tracking
+### Core Modules
+- `init.lua` - Main entry point with public API and user commands
+- `lib/config.lua` - Configuration management with validation
 - `lib/util.lua` - Utility functions for file and text operations
-- `lib/tmux.lua` - Tmux interaction and Claude Code instance management
+
+### Tmux Integration Layer
+- `lib/tmux.lua` - Legacy tmux interaction (being gradually refactored)
+- `lib/tmux_commands.lua` - Centralized tmux command execution utilities
+- `lib/instance_detection.lua` - Modular Claude instance detection and verification
+
+### Context and Communication
 - `lib/context.lua` - Context generation and XML formatting
+- `lib/selection_utils.lua` - Unified visual selection handling
+- `lib/silent.lua` - Silent operation handlers for keymaps
+
+### Infrastructure
+- `lib/constants.lua` - Centralized constants, timeouts, and configuration values
+- `lib/error_handler.lua` - Consistent error handling and validation
 - `lib/debug.lua` - Debug logging functionality
-- `lib/silent.lua` - Handles silent operations for better UX
 
 ## Core Workflow
 
@@ -45,12 +57,13 @@ The plugin uses a modular architecture:
    - Includes verification and fallback mechanisms for window switching
 7. When returning to Neovim, buffers are automatically reloaded to reflect any changes
 
-## Recent Performance Improvements
+## Recent Refactoring Improvements
 
-- **Fast Instance Detection**: Prioritizes local session claude windows before doing expensive global search
-- **Early Claude Ready Detection**: Stops waiting as soon as Claude prompt is detected
-- **Simplified Verification**: Reduces redundant shell command execution
-- **Better Error Handling**: Prevents pane closing issues with wrapped commands and clear error messages
+- **Modular Architecture**: Broken down large functions into focused, testable modules
+- **Eliminated Code Duplication**: Visual selection logic consolidated (90% reduction in silent.lua)
+- **Centralized Utilities**: Tmux commands, error handling, and constants now have dedicated modules
+- **Enhanced Reliability**: Consistent error handling and validation across all operations
+- **Improved Testability**: Functions are smaller with clear dependencies
 
 ## Development Commands
 
@@ -75,8 +88,10 @@ The debug log is stored at: `vim.fn.stdpath('cache') .. '/claude-tmux-neovim-deb
 ### Key Files for Development
 
 - `lua/claude-tmux-neovim/init.lua`: Main entry point and API
-- `lua/claude-tmux-neovim/lib/tmux.lua`: Core functionality for tmux integration
-- `lua/claude-tmux-neovim/lib/context.lua`: Context creation and formatting
+- `lua/claude-tmux-neovim/lib/tmux.lua`: Legacy tmux integration (being refactored)
+- `lua/claude-tmux-neovim/lib/tmux_commands.lua`: New centralized tmux command utilities
+- `lua/claude-tmux-neovim/lib/instance_detection.lua`: Modular Claude detection logic
+- `lua/claude-tmux-neovim/lib/selection_utils.lua`: Unified selection and context handling
 
 ## Configuration
 
@@ -94,6 +109,8 @@ The plugin automatically adds appropriate flags:
 - `<leader>cc` uses `--continue` flag when auto-creating instances
 - `<leader>cn` uses no flags (clean instances)
 
+Configuration validation prevents invalid setups and provides clear error messages for common misconfigurations.
+
 ## Development Guidelines
 
 1. Follow existing code style and organization
@@ -102,12 +119,16 @@ The plugin automatically adds appropriate flags:
 4. Verify compatibility with different tmux versions and configurations
 5. Test with both normal and visual mode selection
 6. Always include robust error handling and fallback mechanisms:
+   - Use the centralized `error_handler.lua` for consistent error reporting
    - Verify panes and windows exist before attempting to use them
    - Include retry logic for operations that might fail initially
    - Provide informative debug logging for troubleshooting
    - Implement fallback approaches when primary methods fail
 7. Test new features with both `<leader>cc` and `<leader>cn` commands
-8. Ensure all tmux operations include proper error handling and debugging
+8. Ensure all tmux operations use the new `tmux_commands.lua` utilities when possible
 9. When modifying tmux interaction code, test across different tmux sessions and window configurations
 10. When adding visual elements (like loading indicators), ensure they work consistently across different terminal types
 11. **IMPORTANT**: The `claude_code_cmd` config should only contain the command/path, never flags. Flags are added programmatically based on the operation.
+12. **NEW**: Prefer using the refactored modules (`selection_utils.lua`, `error_handler.lua`, etc.) over duplicating functionality
+13. **NEW**: Add constants to `constants.lua` rather than using magic numbers or strings
+14. **NEW**: Use the centralized tmux command utilities for consistent error handling and logging
