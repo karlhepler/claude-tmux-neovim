@@ -21,19 +21,22 @@ The plugin uses a modular architecture:
 ## Core Workflow
 
 1. When triggered, the plugin captures code context (file path, git root, cursor position, and optionally selected code)
-2. It uses tmux commands to detect existing Claude Code instances in the same git repository
-   - Uses multiple detection methods including command name, process information, and pane content
-   - Verifies each potential Claude instance with strict checks
+2. It uses optimized tmux commands to detect existing Claude Code instances in the same git repository
+   - **Performance Optimization**: Fast search prioritizes windows named "claude" in current session first
+   - Falls back to comprehensive search across all sessions only if needed
+   - Uses multiple detection methods including window name, command name, and Claude prompt verification
    - Automatically renames windows running Claude to "claude" for consistent identification
-3. If multiple instances exist, a clean table-formatted selection menu is presented
+3. **Simple Instance Logic**: 
+   - **0 instances** → Creates new one with appropriate flags
+   - **1 instance** → Uses it automatically 
+   - **2+ instances** → Shows picker (no remembering of choices)
 4. If no instances exist, it creates a new tmux window running Claude Code
-   - `<leader>cc` always creates instances with the `--continue` flag (hardcoded behavior)
+   - `<leader>cc` creates instances with `--continue` flag when auto-creating
    - `<leader>cn` always creates instances without any flags (clean Claude instances)
-   - The `claude_code_cmd` config option is only used for detecting existing Claude instances, not for creating new ones
-   - Uses sophisticated pane tracking to ensure reliable operation
-   - Implements retry mechanisms for tmux operations that might fail initially
-   - Verifies created panes actually exist before attempting to use them
-   - Shows an animated loading indicator during Claude instance startup
+   - **Error Recovery**: Wraps Claude command with error handling to prevent pane closing
+   - **Optimized Loading**: Uses early detection to reduce wait times (max 1.8s instead of 2.0s)
+   - Shows animated loading indicator with early completion detection
+   - Comprehensive error detection and user feedback for startup failures
 5. The context is formatted as structured XML and sent to the Claude Code instance via tmux
    - Uses tmux buffers for reliable pasting
    - Includes retry logic for paste operations
@@ -41,6 +44,13 @@ The plugin uses a modular architecture:
    - Uses a multi-step approach to ensure reliable window and pane selection
    - Includes verification and fallback mechanisms for window switching
 7. When returning to Neovim, buffers are automatically reloaded to reflect any changes
+
+## Recent Performance Improvements
+
+- **Fast Instance Detection**: Prioritizes local session claude windows before doing expensive global search
+- **Early Claude Ready Detection**: Stops waiting as soon as Claude prompt is detected
+- **Simplified Verification**: Reduces redundant shell command execution
+- **Better Error Handling**: Prevents pane closing issues with wrapped commands and clear error messages
 
 ## Development Commands
 

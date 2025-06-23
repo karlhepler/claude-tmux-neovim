@@ -33,7 +33,7 @@ function M.rename_to_claude_if_needed(pane_id, session, window_idx, window_name)
   return false
 end
 
---- Find all Claude Code instances in tmux
+--- Find all Claude Code instances in tmux (optimized for speed)
 ---@param git_root string The git repository root path
 ---@return table[] instances Array of Claude Code instances
 function M.get_claude_code_instances(git_root)
@@ -41,26 +41,86 @@ function M.get_claude_code_instances(git_root)
     return {}
   end
 
-  debug.log("Starting search for Claude Code instances in git root: " .. git_root)
+  debug.log("Starting optimized search for Claude Code instances in git root: " .. git_root)
   
-  -- Step 1: Get all tmux panes
+  -- Optimized: Get current session first to prioritize local panes
+  local current_session_cmd = [[tmux display-message -p '#{session_name}']]
+  local current_session = vim.fn.system(current_session_cmd):gsub("%s+$", "")
+  debug.log("Current tmux session: " .. current_session)
+  
+  -- Step 1: First try a fast search for windows named 'claude' in current session
+  local fast_search_cmd = string.format(
+    "tmux list-windows -t %s -F '#{window_index} #{window_name}' 2>/dev/null | grep -i claude || true",
+    vim.fn.shellescape(current_session)
+  )
+  local fast_result = vim.fn.system(fast_search_cmd):gsub("%s+$", "")
+  
+  local instances = {}
+  
+  -- If we found claude windows in current session, check them first
+  if fast_result ~= "" then
+    debug.log("Found potential claude windows in current session: " .. fast_result)
+    for line in fast_result:gmatch("[^\r\n]+") do
+      local window_idx, window_name = line:match("([0-9]+) (.+)")
+      if window_idx then
+        -- Get pane info for this window
+        local pane_cmd = string.format(
+          "tmux list-panes -t %s:%s -F '#{pane_id} #{pane_index} #{pane_current_command} #{pane_current_path}'",
+          vim.fn.shellescape(current_session), window_idx
+        )
+        local pane_result = vim.fn.system(pane_cmd)
+        
+        for pane_line in pane_result:gmatch("[^\r\n]+") do
+          local pane_id, pane_idx, command, pane_path = pane_line:match("(%%[0-9]+) ([0-9]+) ([^ ]+) (.*)")
+          
+          if pane_id and pane_path == git_root then
+            debug.log("Fast match found: " .. pane_id .. " in correct git root")
+            
+            -- Quick verification: check for Claude prompt
+            local verify_cmd = string.format(
+              "tmux capture-pane -p -t %s -S -10 | grep -q '╭─\\{1,\\}╮' && echo 'claude' || echo 'other'",
+              pane_id
+            )
+            local verification = vim.fn.system(verify_cmd):gsub("%s+$", "")
+            
+            if verification == "claude" then
+              table.insert(instances, {
+                pane_id = pane_id,
+                session = current_session,
+                window_name = window_name,
+                window_idx = window_idx,
+                pane_idx = pane_idx,
+                command = command,
+                is_current_session = true,
+                detection_method = "[fast]",
+                display = string.format("%s: %s.%s (%s) [fast]", current_session, window_idx, pane_idx, window_name)
+              })
+              debug.log("Fast Claude instance added: " .. pane_id)
+            end
+          end
+        end
+      end
+    end
+  end
+  
+  -- If we found instances via fast search, return them (most common case)
+  if #instances > 0 then
+    debug.log("Fast search successful, found " .. #instances .. " instances")
+    return instances
+  end
+  
+  -- Fallback: Full search across all sessions (slower but thorough)
+  debug.log("Fast search failed, falling back to full search")
   local list_panes_cmd = [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command} #{pane_current_path}']]
-  debug.log("Running command: " .. list_panes_cmd)
-  
   local result = vim.fn.system(list_panes_cmd)
+  
   if vim.v.shell_error ~= 0 or result == "" then
     debug.log("Failed to list tmux panes or no panes found", vim.log.levels.WARN)
     return {}
   end
   
-  local instances = {}
   local claude_code_cmd = config.get().claude_code_cmd
   debug.log("Claude Code command to match: '" .. claude_code_cmd .. "'")
-  
-  -- Get current tmux session for priority sorting
-  local current_session_cmd = [[tmux display-message -p '#{session_name}']]
-  local current_session = vim.fn.system(current_session_cmd):gsub("%s+$", "")
-  debug.log("Current tmux session: " .. current_session)
   
   -- Step 2: Process all panes
   for line in result:gmatch("[^\r\n]+") do
@@ -92,33 +152,43 @@ function M.get_claude_code_instances(git_root)
     elseif command:match("/" .. claude_code_cmd .. "$") then
       debug.log("Found path-based command match: '" .. command .. "' ends with '/" .. claude_code_cmd .. "'")
       is_claude = true
-    -- Method 4: For shell wrappers - check if it's a node.js process running claude code
+    -- Method 4: Quick content check first (most reliable and fast)
     elseif command == "node" or command == "node.js" or command:match("node") then
-      debug.log("Found Node.js process in pane " .. pane_id)
+      debug.log("Found Node.js process in pane " .. pane_id .. ", checking content quickly")
       
-      -- Try to get process information for the Node.js process
-      local ps_cmd = string.format("ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}')", pane_id)
-      debug.log("Running ps command: " .. ps_cmd)
-      local ps_output = vim.fn.system(ps_cmd):gsub("%s+$", "")
-      debug.log("Process command line: " .. ps_output)
+      -- Quick content check first
+      local content_cmd = string.format(
+        "tmux capture-pane -p -t %s -S -5 | grep -q '╭─\\{1,\\}╮' && echo 'claude' || echo 'other'", 
+        pane_id
+      )
+      local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
       
-      -- Check for Claude Code indicators in the process command line
-      if ps_output:lower():match("claude") then
-        debug.log("Process command line contains 'claude', assuming Claude Code")
+      if content_check == "claude" then
+        debug.log("Node process has Claude prompt, confirmed: " .. pane_id)
         is_claude = true
+      else
+        -- Only do expensive ps check if content check failed
+        local ps_cmd = string.format("ps -o command= -p $(tmux display-message -p -t %s '#{pane_pid}') 2>/dev/null", pane_id)
+        local ps_output = vim.fn.system(ps_cmd):gsub("%s+$", "")
+        
+        if ps_output:lower():match("claude") then
+          debug.log("Process command line contains 'claude': " .. ps_output)
+          is_claude = true
+        end
       end
     end
     
-    -- Method 5: Always verify with content check (prompt line) regardless of other methods
-    -- Even if we already think it's Claude, let's verify with content
-    local content_cmd = string.format(
-      "tmux capture-pane -p -t %s | grep -e '╭─\\{1,\\}╮' -e '│ >'", 
-      pane_id
-    )
-    local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
-    if content_check and content_check ~= "" then
-      debug.log("Pane has distinctive Claude prompt line: " .. pane_id)
-      is_claude = true
+    -- Method 5: Final content verification (only if not already confirmed)
+    if not is_claude then
+      local content_cmd = string.format(
+        "tmux capture-pane -p -t %s -S -5 | grep -q '╭─\\{1,\\}╮' && echo 'claude' || echo 'other'", 
+        pane_id
+      )
+      local content_check = vim.fn.system(content_cmd):gsub("%s+$", "")
+      if content_check == "claude" then
+        debug.log("Pane has distinctive Claude prompt line: " .. pane_id)
+        is_claude = true
+      end
     end
     
     -- Step 4: If it's a Claude Code pane, check if it's EXACTLY in the git root
@@ -517,9 +587,15 @@ function M.create_claude_code_instance(git_root, ...)
   local window_name = "claude loading..."
   debug.log("Creating new Claude window with command: " .. claude_cmd)
   
+  -- Add error handling wrapper around claude command to prevent pane closing
+  local safe_claude_cmd = string.format(
+    "cd %s && { %s || { echo 'Claude failed to start. Check installation/auth. Press Enter to close.' && read && exit 1; }; }",
+    vim.fn.shellescape(git_root), claude_cmd
+  )
+  
   -- Create the new window and capture its index immediately
-  local create_cmd = string.format("tmux new-window -d -n '%s' -P -F '#{window_index}' 'cd %s && %s'", 
-    window_name, vim.fn.shellescape(git_root), claude_cmd)
+  local create_cmd = string.format("tmux new-window -d -n '%s' -P -F '#{window_index}' '%s'", 
+    window_name, safe_claude_cmd)
   
   debug.log("Running command: " .. create_cmd)
   local new_window_idx = vim.fn.system(create_cmd)
@@ -533,36 +609,72 @@ function M.create_claude_code_instance(git_root, ...)
   
   debug.log("Successfully created new window with index: " .. new_window_idx)
   
-  -- Give it time to start - increased from 0.5 to 2.0 seconds for slow Claude initialization
-  -- Use animated loading indicator to show progress
-  for i = 1, 4 do
-    local indicators = { "⣾", "⣽", "⣻", "⢿" }
+  -- Optimized loading with early detection and shorter waits
+  local max_wait_cycles = 6  -- Max 1.8 seconds total
+  local claude_ready = false
+  
+  for i = 1, max_wait_cycles do
+    local indicators = { "⣾", "⣽", "⣻", "⢿", "⣯", "⣷" }
     local loading_title = string.format("%s claude loading...", indicators[i])
     vim.fn.system(string.format("tmux rename-window -t %s:%s '%s'", 
                              current_session, new_window_idx, loading_title))
-    vim.fn.system("sleep 0.5")
+    vim.fn.system("sleep 0.3")
+    
+    -- Check if Claude is ready early (after first cycle)
+    if i > 1 then
+      local pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
+                                   vim.fn.shellescape(current_session), new_window_idx)
+      local pane_id = vim.trim(vim.fn.system(pane_cmd))
+      
+      if pane_id ~= "" then
+        local ready_check = string.format(
+          "tmux capture-pane -p -t %s -S -3 | grep -q '╭─\\{1,\\}╮' && echo 'ready' || echo 'waiting'",
+          pane_id
+        )
+        local status = vim.trim(vim.fn.system(ready_check))
+        
+        if status == "ready" then
+          debug.log("Claude is ready early at cycle " .. i .. ", breaking out of loading loop")
+          claude_ready = true
+          break
+        end
+      end
+    end
   end
   
-  -- Verify the window still exists and has expected name
-  local verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:' | grep '%s'", 
-                                        vim.fn.shellescape(current_session), new_window_idx, window_name)
+  if not claude_ready then
+    debug.log("Claude loading timeout reached, continuing anyway")
+  end
+  
+  -- Enhanced verification: Check if window and panes still exist
+  local verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:'", 
+                                        vim.fn.shellescape(current_session), new_window_idx)
   local window_verify = vim.fn.system(verify_window_cmd)
   
   if vim.trim(window_verify) == "" then
-    debug.log("WARNING: Could not verify new window with name '" .. window_name .. "'")
-    -- Try without name check
-    verify_window_cmd = string.format("tmux list-windows -t %s: | grep '^%s:'", 
-                                     vim.fn.shellescape(current_session), new_window_idx)
-    window_verify = vim.fn.system(verify_window_cmd)
-    
-    if vim.trim(window_verify) == "" then
-      vim.notify("Failed to verify new Claude Code window", vim.log.levels.ERROR)
-      return nil
-    else
-      debug.log("Window exists but may have unexpected name: " .. vim.trim(window_verify))
-    end
+    debug.log("ERROR: Window " .. new_window_idx .. " disappeared after creation!")
+    vim.notify("Claude window closed unexpectedly. Check Claude installation or authentication.", vim.log.levels.ERROR)
+    return nil
   else
-    debug.log("Successfully verified window exists with correct name")
+    debug.log("Window verified: " .. vim.trim(window_verify))
+    
+    -- Additional check: see if pane contains error message
+    local pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
+                                 vim.fn.shellescape(current_session), new_window_idx)
+    local pane_id = vim.trim(vim.fn.system(pane_cmd))
+    
+    if pane_id ~= "" then
+      local error_check = string.format(
+        "tmux capture-pane -p -t %s | grep -i 'failed\\|error\\|authentication' || echo 'ok'",
+        pane_id
+      )
+      local error_output = vim.trim(vim.fn.system(error_check))
+      
+      if error_output ~= "ok" then
+        debug.log("Detected error in Claude pane: " .. error_output)
+        vim.notify("Claude startup error detected: " .. error_output, vim.log.levels.WARN)
+      end
+    end
   end
   
   -- Now that Claude is ready, update the window name to the final state

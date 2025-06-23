@@ -43,7 +43,6 @@ maintaining your preferred environment.
   - Includes retry mechanisms for tmux operations that might fail initially
   - Verifies created panes actually exist before attempting to use them
   - Provides fallback methods if the primary approach encounters issues
-  - Remembers choice per git repository
   - Shows animated loading indicator during Claude instance startup
 - Automatically switches to Claude Code pane after sending context
   - Uses multi-step approach to ensure reliable window and pane selection
@@ -100,11 +99,6 @@ git clone https://github.com/karlhepler/claude-tmux-neovim.git \
   ~/.local/share/nvim/site/pack/plugins/start/claude-tmux-neovim
 ```
 
-Or add it to your runtime path manually in your Neovim config:
-```lua
--- Add the plugin to runtime path
-vim.opt.rtp:prepend("~/path/to/claude-tmux-neovim")
-```
 
 ==============================================================================
 5. CONFIGURATION                            *claude-tmux-neovim-configuration*
@@ -116,7 +110,6 @@ require("claude-tmux-neovim").setup({
   keymap = "<leader>cc",           -- Key binding for trigger
   keymap_new = "<leader>cn",       -- Key binding for new instance
   auto_switch_pane = true,         -- Auto switch to Claude pane
-  remember_choice = true,          -- Remember instance per git repo
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns
   debug = false,                   -- Enable debug logging
   
@@ -144,16 +137,13 @@ All configuration options:
     Default: "<leader>cn"
 
     Note: 
-    - `<leader>cc` creates new Claude instances with "claude --continue" 
-    - `<leader>cn` creates new Claude instances with "claude" (no flags)
+    - `<leader>cc` creates new Claude instances with `claude --continue` when no instance exists
+    - `<leader>cn` always creates new Claude instances with `claude` (no flags)
 
 `auto_switch_pane` (boolean)
     Whether to automatically switch to the Claude Code pane after sending context.
     Default: true
 
-`remember_choice` (boolean)
-    Whether to remember your chosen Claude Code instance per git repository.
-    Default: true
 
 `auto_reload_buffers` (boolean)
     Whether to automatically reload all buffers when focus returns to Neovim.
@@ -194,11 +184,6 @@ works for both `<leader>cc` and `<leader>cn`.
 *:ClaudeCodeNew*
     Create a new Claude Code instance and send context. Always uses plain "claude" command without flags.
 
-*:ClaudeCodeReset*
-    Reset all remembered Claude Code instances.
-
-*:ClaudeCodeResetGit*
-    Reset the remembered Claude Code instance for the current git repository.
 
 *:ClaudeCodeReload*
     Manually reload all Neovim buffers from disk.
@@ -330,9 +315,9 @@ Common issues and their solutions:
 
 - Use `<leader>cc` in visual mode to send only selected code for review.
 - Use `<leader>cn` in visual mode to create a new Claude instance with only selected code.
-- The plugin remembers your chosen Claude Code instance per git repository.
+- **Simple Logic**: 0 instances → creates new one, 1 instance → uses it, 2+ instances → shows picker.
 - If no Claude Code instances are found, a new one will be created automatically.
-- You can reset remembered instances with `:ClaudeCodeReset`.
+- **Performance Optimized**: Fast detection prioritizes current session before searching globally.
 - For multi-project workflows, the plugin isolates instances by git repository.
 - If Claude Code makes changes to your files, they'll be automatically reloaded
   when you return to Neovim. You can also manually reload with `:ClaudeCodeReload`.
@@ -347,12 +332,19 @@ Common issues and their solutions:
   - [other]: Other detection method
   - [auto]: Found by aggressive fallback detection
   - [new]: Newly created instance
-- For reliable operation, the plugin now includes:
+  - [fast]: Found via optimized fast search in current session
+- **Performance Improvements**: The plugin includes optimizations for speed:
+  - Fast detection prioritizes windows named "claude" in current session first
+  - Early Claude ready detection reduces wait times (max 1.8s instead of 2.0s)
+  - Simplified verification reduces redundant shell command execution
+- **Error Recovery**: Enhanced reliability includes:
+  - Error handling wrapper prevents unexpected pane closing
+  - Clear error messages for startup failures (auth issues, installation problems)
   - Automatic retries for paste operations that might fail initially
   - Verification that panes exist before attempting to use them
   - Fallback mechanisms if the primary approach encounters issues
   - Enhanced window and pane selection to ensure reliable switching
-  - Animated loading indicator during Claude instance startup
+  - Animated loading indicator with early completion detection
 - If the plugin seems stuck during instance creation, try running `:ClaudeCodeDebug`
   to enable detailed logging and then view it with `:ClaudeCodeShowLog`.
 - The plugin now automatically renames tmux windows running Claude to "claude" for
