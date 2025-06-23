@@ -48,25 +48,22 @@ function M.get_claude_code_instances(git_root)
   local current_session = vim.fn.system(current_session_cmd):gsub("%s+$", "")
   debug.log("Current tmux session: " .. current_session)
   
-  -- Step 1: First try a fast search for windows named 'claude' in current session
-  local fast_search_cmd = string.format(
-    "tmux list-windows -t %s -F '#{window_index} #{window_name}' 2>/dev/null | grep -i claude || true",
-    vim.fn.shellescape(current_session)
-  )
+  -- Step 1: First try a fast search for windows named 'claude' across all sessions
+  local fast_search_cmd = "tmux list-windows -a -F '#{session_name} #{window_index} #{window_name}' 2>/dev/null | grep -i claude || true"
   local fast_result = vim.fn.system(fast_search_cmd):gsub("%s+$", "")
   
   local instances = {}
   
-  -- If we found claude windows in current session, check them first
+  -- If we found claude windows across all sessions, check them first
   if fast_result ~= "" then
-    debug.log("Found potential claude windows in current session: " .. fast_result)
+    debug.log("Found potential claude windows across all sessions: " .. fast_result)
     for line in fast_result:gmatch("[^\r\n]+") do
-      local window_idx, window_name = line:match("([0-9]+) (.+)")
-      if window_idx then
+      local session, window_idx, window_name = line:match("([^ ]+) ([0-9]+) (.+)")
+      if session and window_idx then
         -- Get pane info for this window
         local pane_cmd = string.format(
           "tmux list-panes -t %s:%s -F '#{pane_id} #{pane_index} #{pane_current_command} #{pane_current_path}'",
-          vim.fn.shellescape(current_session), window_idx
+          vim.fn.shellescape(session), window_idx
         )
         local pane_result = vim.fn.system(pane_cmd)
         
@@ -84,16 +81,17 @@ function M.get_claude_code_instances(git_root)
             local verification = vim.fn.system(verify_cmd):gsub("%s+$", "")
             
             if verification == "claude" then
+              local is_current_session = (session == current_session)
               table.insert(instances, {
                 pane_id = pane_id,
-                session = current_session,
+                session = session,
                 window_name = window_name,
                 window_idx = window_idx,
                 pane_idx = pane_idx,
                 command = command,
-                is_current_session = true,
+                is_current_session = is_current_session,
                 detection_method = "[fast]",
-                display = string.format("%s: %s.%s (%s) [fast]", current_session, window_idx, pane_idx, window_name)
+                display = string.format("%s: %s.%s (%s) [fast]", session, window_idx, pane_idx, window_name)
               })
               debug.log("Fast Claude instance added: " .. pane_id)
             end
