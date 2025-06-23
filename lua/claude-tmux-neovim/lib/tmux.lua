@@ -587,9 +587,10 @@ function M.create_claude_code_instance(git_root, ...)
   local window_name = "claude loading..."
   debug.log("Creating new Claude window with command: " .. claude_cmd)
   
-  -- Add error handling wrapper around claude command to prevent pane closing
+  -- Create the claude command - Claude is interactive so we let it run directly
+  -- The 'exec' ensures the claude process replaces the shell, preventing the pane from closing
   local safe_claude_cmd = string.format(
-    "cd %s && { %s || { echo 'Claude failed to start. Check installation/auth. Press Enter to close.' && read && exit 1; }; }",
+    "cd %s && exec %s",
     vim.fn.shellescape(git_root), claude_cmd
   )
   
