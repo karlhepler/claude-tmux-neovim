@@ -27,15 +27,6 @@ local function setup_buffer_reload()
   ]])
 end
 
---- Reset all remembered instances
-function M.reset_instances()
-  config.reset_instances()
-  
-  -- Clear command line
-  vim.schedule(function()
-    vim.cmd("echo ''")
-  end)
-end
 
 --- Create a new Claude Code instance and send context
 ---@return table|nil The created instance or nil if failed
@@ -52,10 +43,6 @@ function M.create_new_instance()
   -- Create a new instance with plain "claude" command (no flags)
   local new_instance = tmux.create_claude_code_instance(git_root)
   
-  -- Set as remembered instance if created successfully
-  if new_instance and config.get().remember_choice then
-    config.set_remembered_instance(git_root, new_instance)
-  end
   
   -- If instance was created successfully, send context to it (for normal mode)
   if new_instance and not vim.fn.mode():match("[vV\22]") then
@@ -73,25 +60,6 @@ function M.create_new_instance()
   return new_instance
 end
 
---- Reset remembered instance for current git root
-function M.reset_git_instance()
-  local git_root = util.get_git_root()
-  if git_root and config.get_remembered_instance(git_root) then
-    config.clear_remembered_instance(git_root)
-    -- Use scheduled notification to avoid disrupting workflow
-    vim.schedule(function()
-      vim.notify("Reset Claude Code instance for " .. git_root, vim.log.levels.INFO)
-      -- Clear command line after notification
-      vim.cmd("echo ''")
-    end)
-  else
-    vim.schedule(function()
-      vim.notify("No remembered instance for current git repository", vim.log.levels.WARN)
-      -- Clear command line after notification
-      vim.cmd("echo ''")
-    end)
-  end
-end
 
 --- Toggle debug mode
 function M.toggle_debug()
@@ -178,8 +146,6 @@ function M.setup(user_config)
   -- Create user commands with {silent=true}
   vim.api.nvim_create_user_command("ClaudeCodeSend", silent_send_context, { range = true, bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeNew", M.create_new_instance, { bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeReset", M.reset_instances, { bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeResetGit", M.reset_git_instance, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeDebug", M.toggle_debug, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeShowLog", M.show_debug_log, { bang = true })
   vim.api.nvim_create_user_command("ClaudeCodeClearLog", M.clear_debug_log, { bang = true })

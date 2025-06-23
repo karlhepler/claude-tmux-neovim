@@ -10,7 +10,6 @@ M.defaults = {
   keymap_new = "<leader>cn", -- Default keymap to create new Claude Code instance
   claude_code_cmd = "claude --continue", -- Command to start Claude Code with continue flag
   auto_switch_pane = true, -- Automatically switch to tmux pane after sending
-  remember_choice = true, -- Remember chosen Claude Code instance per git repo
   debug = false, -- Enable debug logging
   auto_reload_buffers = true, -- Automatically reload buffers when returning from Claude Code
   
@@ -28,8 +27,7 @@ M.defaults = {
 
 -- Internal state
 M.state = {
-  config = {}, -- Merged config
-  remembered_instances = {} -- Stored tmux instances by git root
+  config = {} -- Merged config
 }
 
 --- Apply user configuration
@@ -45,33 +43,8 @@ function M.get()
   return M.state.config
 end
 
---- Reset all remembered instances
-function M.reset_instances()
-  M.state.remembered_instances = {}
-  -- Use scheduled notification for less disruptive UX
-  vim.schedule(function()
-    vim.notify("Reset all remembered Claude Code instances", vim.log.levels.INFO)
-  end)
-end
 
---- Get remembered instance for git root
----@param git_root string The git repository root path
----@return table|nil remembered_instance The remembered instance or nil
-function M.get_remembered_instance(git_root)
-  return M.state.remembered_instances[git_root]
-end
 
---- Set remembered instance for git root
----@param git_root string The git repository root path
----@param instance table The Claude Code instance to remember
-function M.set_remembered_instance(git_root, instance)
-  M.state.remembered_instances[git_root] = instance
-end
 
---- Clear remembered instance for git root
----@param git_root string The git repository root path
-function M.clear_remembered_instance(git_root)
-  M.state.remembered_instances[git_root] = nil
-end
 
 return M

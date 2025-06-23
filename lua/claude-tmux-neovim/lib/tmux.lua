@@ -798,26 +798,6 @@ function M.with_claude_code_instance(git_root, callback)
   -- Find available instances
   local instances = M.get_claude_code_instances(git_root)
   
-  -- Check for remembered instance only if we have exactly one instance
-  -- This bypasses the remembered instance logic if we have multiple instances
-  if #instances == 1 and config.get().remember_choice then
-    local remembered_instance = config.get_remembered_instance(git_root)
-    
-    if remembered_instance then
-      -- Verify instance still exists (silently)
-      local cmd = string.format("tmux has-session -t %s 2>/dev/null && echo true || echo false", remembered_instance.pane_id)
-      local exists = vim.fn.system(cmd)
-      
-      if vim.trim(exists) == "true" then
-        -- Use existing instance
-        callback(remembered_instance)
-        return
-      else
-        -- Clear invalid remembered instance without notification
-        config.clear_remembered_instance(git_root)
-      end
-    end
-  end
   
   if #instances == 0 then
     debug.log("No existing Claude instances found. Creating a new one with --continue flag")
@@ -897,9 +877,6 @@ function M.with_claude_code_instance(git_root, callback)
         end
       end
       
-      if config.get().remember_choice then
-        config.set_remembered_instance(git_root, new_instance)
-      end
       
       callback(new_instance)
     else
@@ -908,9 +885,6 @@ function M.with_claude_code_instance(git_root, callback)
     end
   elseif #instances == 1 then
     -- Use the only instance without notification
-    if config.get().remember_choice then
-      config.set_remembered_instance(git_root, instances[1])
-    end
     callback(instances[1])
   else
     -- Let user choose from multiple instances with a cleaner UI
@@ -1066,16 +1040,10 @@ function M.with_claude_code_instance(git_root, callback)
       -- Process selection - ensure index is valid
       if choice_idx >= 1 and choice_idx <= #instances then
         -- Use selected instance
-        if config.get().remember_choice then
-          config.set_remembered_instance(git_root, instances[choice_idx])
-        end
         callback(instances[choice_idx])
       elseif choice_idx == #instances + 1 then
         -- Create new instance
         local new_instance = M.create_claude_code_instance(git_root)
-        if new_instance and config.get().remember_choice then
-          config.set_remembered_instance(git_root, new_instance)
-        end
         callback(new_instance)
       end
       

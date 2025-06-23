@@ -42,10 +42,6 @@ function M.send_normal()
       if new_instance then
         debug.log("Successfully created new Claude instance with --continue flag")
         
-        -- Set as remembered instance if created successfully
-        if config.get().remember_choice then
-          config.set_remembered_instance(git_root, new_instance)
-        end
         
         -- Send to the new Claude Code instance
         tmux.send_to_claude_code(new_instance, xml)
@@ -154,10 +150,6 @@ function M.send_visual()
       if new_instance then
         debug.log("Successfully created new Claude instance with --continue flag")
         
-        -- Set as remembered instance if created successfully
-        if config.get().remember_choice then
-          config.set_remembered_instance(git_root, new_instance)
-        end
         
         -- Send to the new Claude Code instance
         tmux.send_to_claude_code(new_instance, xml)
@@ -270,10 +262,6 @@ function M.create_new_visual()
     -- Create a new Claude instance with plain "claude" command (no flags)
     local new_instance = tmux.create_claude_code_instance(git_root)
     
-    -- Set as remembered instance if created successfully
-    if new_instance and config.get().remember_choice then
-      config.set_remembered_instance(git_root, new_instance)
-    end
     
     -- Send context to the new instance and switch to it
     if new_instance then

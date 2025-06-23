@@ -2,15 +2,27 @@
 
 A Neovim plugin that seamlessly integrates with Claude Code via tmux, allowing you to send rich code context to Claude Code instances with a single keystroke.
 
+## Overview
+
+Imagine you're coding in Neovim and need Claude's help. Instead of copying code, switching windows, and pasting into Claude, you simply:
+
+1. **Press `<leader>cc`** - The plugin instantly captures your current file, cursor position, and any selected code
+2. **Claude appears** - Either in an existing Claude Code window or a new one (with `--continue` flag for context continuity)
+3. **Context is sent** - Your code appears in Claude formatted as XML with full file context, ready for discussion
+4. **Focus switches** - You're automatically placed in the Claude pane to start your conversation
+5. **Changes sync back** - When you return to Neovim, any files Claude modified are automatically reloaded
+
+For a fresh Claude session without history, use `<leader>cn` instead. The plugin intelligently manages Claude instances per git repository, and when multiple instances exist, it can remember your choice to avoid showing the picker repeatedly.
+
 ## Why use this plugin?
 
-- **Streamlined workflow**: Instantly send code context to Claude Code without leaving your editor
-- **Rich context sharing**: Automatically includes file path, git root, cursor position, and optional selections
-- **Seamless integration**: Works within your existing tmux sessions and git workflow
-- **Smart instance management**: Detects existing Claude Code instances or creates new ones as needed
-- **Automatic file reloading**: When returning to Neovim from Claude Code, files are automatically reloaded to reflect any changes
+- **Zero friction AI assistance**: Get help without breaking your flow - it's as fast as running a vim command
+- **Full context awareness**: Claude sees not just your selection, but the entire file, git root, and cursor location
+- **Smart instance management**: Works with your existing Claude sessions or creates new ones intelligently
+- **Git-aware isolation**: Only shows Claude instances from your current repository, keeping projects separate
+- **Automatic synchronization**: Changes made by Claude are instantly reflected when you return to Neovim
 
-This plugin acts as a bridge between your Neovim editor and Claude Code running in tmux panes, enabling a smooth AI-assisted coding experience while maintaining your preferred environment.
+This plugin transforms Claude Code from a separate tool into an extension of your editor, making AI-assisted coding feel native to your Neovim workflow.
 
 ## Features
 
@@ -23,7 +35,7 @@ This plugin acts as a bridge between your Neovim editor and Claude Code running 
   - Shows detection method in selection menu ([cmd], [node], [prompt], [renamed], etc.)
   - Automatically renames tmux windows to "claude" for consistency
   - Creates new instances if none exist with robust pane tracking
-  - Remembers choice per git repository
+  - Remembers your instance choice when multiple exist (skip picker on subsequent uses)
   - Automatic retry mechanisms for tmux operations
 - Automatically switches to Claude Code pane after sending context with fallback mechanisms
 - Automatically reloads Neovim buffers when focus returns from Claude Code
@@ -87,14 +99,6 @@ git clone https://github.com/karlhepler/claude-tmux-neovim.git \
   ~/.local/share/nvim/site/pack/plugins/start/claude-tmux-neovim
 ```
 
-### Add to runtime path
-
-Add the plugin to your runtime path in your Neovim config:
-
-```lua
--- Add the plugin to runtime path
-vim.opt.rtp:prepend("~/path/to/claude-tmux-neovim")
-```
 
 ## Configuration
 
@@ -105,15 +109,14 @@ require("claude-tmux-neovim").setup({
   keymap = "<leader>cc",           -- Key binding for sending context
   keymap_new = "<leader>cn",       -- Key binding for creating new Claude instance
   auto_switch_pane = true,         -- Auto switch to Claude pane
-  remember_choice = true,          -- Remember instance per git repo
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns to Neovim
   debug = false,                   -- Enable debug logging
 })
 ```
 
 Note: 
-- `<leader>cc` creates new Claude instances with "claude --continue" 
-- `<leader>cn` creates new Claude instances with "claude" (no flags)
+- `<leader>cc` creates new Claude instances with `claude --continue` when no instance exists
+- `<leader>cn` always creates new Claude instances with `claude` (no flags)
 
 ## How It Works
 
@@ -156,8 +159,6 @@ In visual mode, only your selected code will be included in the XML context, hel
 
 - `:ClaudeCodeSend` - Send the current file context to Claude Code.
 - `:ClaudeCodeNew` - Create a new Claude Code instance and send context (always uses plain `claude` command).
-- `:ClaudeCodeReset` - Reset all remembered Claude Code instances.
-- `:ClaudeCodeResetGit` - Reset the remembered Claude Code instance for the current git repository.
 - `:ClaudeCodeReload` - Manually reload all Neovim buffers from disk.
 - `:ClaudeCodeDebug` - Toggle debug mode for troubleshooting.
 - `:ClaudeCodeShowLog` - Show the debug log in a split window.
