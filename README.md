@@ -108,6 +108,7 @@ Add this to your Neovim config:
 require("claude-tmux-neovim").setup({
   keymap = "<leader>cc",           -- Key binding for sending context
   keymap_new = "<leader>cn",       -- Key binding for creating new Claude instance
+  claude_code_cmd = "claude",      -- Command/path to Claude Code CLI (no flags)
   auto_switch_pane = true,         -- Auto switch to Claude pane
   auto_reload_buffers = true,      -- Auto reload buffers when focus returns to Neovim
   debug = false,                   -- Enable debug logging
@@ -115,6 +116,7 @@ require("claude-tmux-neovim").setup({
 ```
 
 Note: 
+- **`claude_code_cmd`**: Should only contain the command name/path (e.g., `"claude"` or `"/path/to/claude"`), not flags. The plugin automatically adds appropriate flags.
 - `<leader>cc` creates new Claude instances with `claude --continue` when no instance exists
 - `<leader>cn` always creates new Claude instances with `claude` (no flags)
 

@@ -78,6 +78,22 @@ The debug log is stored at: `vim.fn.stdpath('cache') .. '/claude-tmux-neovim-deb
 - `lua/claude-tmux-neovim/lib/tmux.lua`: Core functionality for tmux integration
 - `lua/claude-tmux-neovim/lib/context.lua`: Context creation and formatting
 
+## Configuration
+
+The `claude_code_cmd` configuration option should only specify the command or path to Claude Code CLI, not include flags:
+
+```lua
+require("claude-tmux-neovim").setup({
+  claude_code_cmd = "claude",  -- Just the command, no flags
+  -- or with custom path:
+  claude_code_cmd = "/path/to/claude",  -- Custom path, no flags
+})
+```
+
+The plugin automatically adds appropriate flags:
+- `<leader>cc` uses `--continue` flag when auto-creating instances
+- `<leader>cn` uses no flags (clean instances)
+
 ## Development Guidelines
 
 1. Follow existing code style and organization
@@ -94,3 +110,4 @@ The debug log is stored at: `vim.fn.stdpath('cache') .. '/claude-tmux-neovim-deb
 8. Ensure all tmux operations include proper error handling and debugging
 9. When modifying tmux interaction code, test across different tmux sessions and window configurations
 10. When adding visual elements (like loading indicators), ensure they work consistently across different terminal types
+11. **IMPORTANT**: The `claude_code_cmd` config should only contain the command/path, never flags. Flags are added programmatically based on the operation.

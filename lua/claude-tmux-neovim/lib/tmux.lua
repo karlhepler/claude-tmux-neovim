@@ -571,7 +571,7 @@ function M.create_claude_code_instance(git_root, ...)
   
   -- Build the claude command with any additional arguments
   local claude_args = {...}
-  local base_cmd = "claude"
+  local base_cmd = config.get().claude_code_cmd
   local claude_cmd = base_cmd
   
   -- Add any additional arguments
@@ -666,13 +666,13 @@ function M.create_claude_code_instance(git_root, ...)
     
     if pane_id ~= "" then
       local error_check = string.format(
-        "tmux capture-pane -p -t %s | grep -i 'failed\\|error\\|authentication' || echo 'ok'",
+        "tmux capture-pane -p -t %s | grep -i 'failed\\|authentication failed\\|command not found' || echo 'ok'",
         pane_id
       )
       local error_output = vim.trim(vim.fn.system(error_check))
       
       if error_output ~= "ok" then
-        debug.log("Detected error in Claude pane: " .. error_output)
+        debug.log("Detected startup error in Claude pane: " .. error_output)
         vim.notify("Claude startup error detected: " .. error_output, vim.log.levels.WARN)
       end
     end
@@ -920,49 +920,11 @@ function M.with_claude_code_instance(git_root, callback)
     -- Pass --continue flag for automatic instance creation
     local new_instance = M.create_claude_code_instance(git_root, "--continue")
     
-    -- If creation fails, verify we're actually passing the correct command 
+    -- If creation fails, log and return nil
     if not new_instance then
-      debug.log("Failed initial instance creation attempt. Debug command being used: " .. config.get().claude_code_cmd)
-      
-      -- Try again with direct command
-      -- This is a fallback in case the flag parameter isn't working
-      local create_cmd = string.format("tmux new-window -d -n %s -P -F '#{window_index}' 'cd %s && %s'", 
-        "claude", vim.fn.shellescape(git_root), config.get().claude_code_cmd)
-      
-      debug.log("Trying direct command creation: " .. create_cmd)
-      local new_window_idx = vim.fn.system(create_cmd)
-      new_window_idx = vim.trim(new_window_idx)
-      
-      -- If direct creation worked, proceed with creating our instance manually
-      if vim.v.shell_error == 0 and new_window_idx ~= "" then
-        debug.log("Direct creation succeeded with window index: " .. new_window_idx)
-        
-        -- Get current session
-        local current_session = vim.fn.system("tmux display-message -p '#{session_name}'")
-        current_session = vim.trim(current_session)
-        
-        -- Give it time to start
-        vim.fn.system("sleep 0.5")
-        
-        -- Get the pane ID
-        local pane_cmd = string.format("tmux list-panes -t %s:%s -F '#{pane_id}'", 
-                                     vim.fn.shellescape(current_session), new_window_idx)
-        local pane_id = vim.trim(vim.fn.system(pane_cmd))
-        
-        if pane_id ~= "" then
-          new_instance = {
-            pane_id = pane_id,
-            session = current_session,
-            window_name = "claude",
-            window_idx = new_window_idx,
-            pane_idx = "0",
-            command = config.get().claude_code_cmd,
-            detection_method = "[new]",
-            display = string.format("%s: %s.0 (claude) [new]", current_session, new_window_idx)
-          }
-          debug.log("Successfully created instance via direct method")
-        end
-      end
+      debug.log("Failed to create Claude instance")
+      vim.notify("Failed to create new Claude Code instance", vim.log.levels.ERROR)
+      return nil
     end
     
     if new_instance then
