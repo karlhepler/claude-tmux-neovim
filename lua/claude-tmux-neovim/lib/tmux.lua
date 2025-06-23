@@ -33,7 +33,7 @@ function M.rename_to_claude_if_needed(pane_id, session, window_idx, window_name)
   return false
 end
 
---- Find all Claude Code instances in tmux (optimized for speed)
+--- Find all Claude Code instances in tmux (comprehensive search)
 ---@param git_root string The git repository root path
 ---@return table[] instances Array of Claude Code instances
 function M.get_claude_code_instances(git_root)
@@ -41,76 +41,18 @@ function M.get_claude_code_instances(git_root)
     return {}
   end
 
-  debug.log("Starting optimized search for Claude Code instances in git root: " .. git_root)
+  debug.log("Starting comprehensive search for Claude Code instances in git root: " .. git_root)
   
-  -- Optimized: Get current session first to prioritize local panes
+  -- Get current session for prioritization
   local current_session_cmd = [[tmux display-message -p '#{session_name}']]
   local current_session = vim.fn.system(current_session_cmd):gsub("%s+$", "")
   debug.log("Current tmux session: " .. current_session)
   
-  -- Step 1: First try a fast search for windows named 'claude' across all sessions
-  local fast_search_cmd = "tmux list-windows -a -F '#{session_name} #{window_index} #{window_name}' 2>/dev/null | grep -i claude || true"
-  local fast_result = vim.fn.system(fast_search_cmd):gsub("%s+$", "")
-  
-  local instances = {}
-  
-  -- If we found claude windows across all sessions, check them first
-  if fast_result ~= "" then
-    debug.log("Found potential claude windows across all sessions: " .. fast_result)
-    for line in fast_result:gmatch("[^\r\n]+") do
-      local session, window_idx, window_name = line:match("([^ ]+) ([0-9]+) (.+)")
-      if session and window_idx then
-        -- Get pane info for this window
-        local pane_cmd = string.format(
-          "tmux list-panes -t %s:%s -F '#{pane_id} #{pane_index} #{pane_current_command} #{pane_current_path}'",
-          vim.fn.shellescape(session), window_idx
-        )
-        local pane_result = vim.fn.system(pane_cmd)
-        
-        for pane_line in pane_result:gmatch("[^\r\n]+") do
-          local pane_id, pane_idx, command, pane_path = pane_line:match("(%%[0-9]+) ([0-9]+) ([^ ]+) (.*)")
-          
-          if pane_id and pane_path == git_root then
-            debug.log("Fast match found: " .. pane_id .. " in correct git root")
-            
-            -- Quick verification: check for Claude prompt
-            local verify_cmd = string.format(
-              "tmux capture-pane -p -t %s -S -10 | grep -q '╭─\\{1,\\}╮' && echo 'claude' || echo 'other'",
-              pane_id
-            )
-            local verification = vim.fn.system(verify_cmd):gsub("%s+$", "")
-            
-            if verification == "claude" then
-              local is_current_session = (session == current_session)
-              table.insert(instances, {
-                pane_id = pane_id,
-                session = session,
-                window_name = window_name,
-                window_idx = window_idx,
-                pane_idx = pane_idx,
-                command = command,
-                is_current_session = is_current_session,
-                detection_method = "[fast]",
-                display = string.format("%s: %s.%s (%s) [fast]", session, window_idx, pane_idx, window_name)
-              })
-              debug.log("Fast Claude instance added: " .. pane_id)
-            end
-          end
-        end
-      end
-    end
-  end
-  
-  -- If we found instances via fast search, return them (most common case)
-  if #instances > 0 then
-    debug.log("Fast search successful, found " .. #instances .. " instances")
-    return instances
-  end
-  
-  -- Fallback: Full search across all sessions (slower but thorough)
-  debug.log("Fast search failed, falling back to full search")
+  -- Full search across all sessions (reliable detection)
+  debug.log("Performing comprehensive search across all sessions")
   local list_panes_cmd = [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command} #{pane_current_path}']]
   local result = vim.fn.system(list_panes_cmd)
+  local instances = {}
   
   if vim.v.shell_error ~= 0 or result == "" then
     debug.log("Failed to list tmux panes or no panes found", vim.log.levels.WARN)
