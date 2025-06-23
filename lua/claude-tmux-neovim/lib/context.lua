@@ -5,39 +5,30 @@
 local M = {}
 local util = require('claude-tmux-neovim.lib.util')
 local config = require('claude-tmux-neovim.lib.config')
+local error_handler = require('claude-tmux-neovim.lib.error_handler')
 
 --- Create a context payload for sending to Claude
 ---@param opts table|nil Options including range information
 ---@return table|nil context Context information or nil if failed
 function M.create_context(opts)
-  -- Perform validation checks without disruptive notifications
-  if not util.is_tmux_running() then
-    -- More subtle notification - won't interrupt workflow
-    vim.schedule(function()
-      vim.notify("tmux is not running", vim.log.levels.WARN)
-    end)
-    return nil
-  end
-
-  -- Get current file path
-  local file_path = vim.fn.expand('%:p')
-  if file_path == "" then
-    -- More subtle notification
-    vim.schedule(function()
-      vim.notify("No file open", vim.log.levels.WARN)
-    end)
+  -- Validate environment prerequisites
+  if not error_handler.validate_tmux_environment() then
     return nil
   end
   
-  -- Get git root
-  local git_root = util.get_git_root()
-  if not git_root then
-    -- More subtle notification
-    vim.schedule(function()
-      vim.notify("Not in a git repository", vim.log.levels.WARN)
-    end)
+  if not error_handler.validate_file_environment() then
     return nil
   end
+  
+  if not error_handler.validate_git_environment() then
+    return nil
+  end
+
+  -- Get current file path (already validated above)
+  local file_path = vim.fn.expand('%:p')
+  
+  -- Get git root (already validated above)
+  local git_root = util.get_git_root()
   
   -- Get cursor position
   local position = util.get_cursor_position()
