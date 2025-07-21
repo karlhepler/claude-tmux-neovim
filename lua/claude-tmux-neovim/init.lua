@@ -1,11 +1,12 @@
 ---@brief Fast Claude-Tmux-Neovim plugin for sending code context to Claude
 local M = {}
 
--- Get git root of current file
----@param filepath string
+-- Get git root of current file or directory
+---@param path string File path or directory path
 ---@return string|nil git_root
-local function get_git_root(filepath)
-  local dir = vim.fn.fnamemodify(filepath, ':h')
+local function get_git_root(path)
+  -- If path is already a directory, use it directly. Otherwise get its parent directory
+  local dir = vim.fn.isdirectory(path) == 1 and path or vim.fn.fnamemodify(path, ':h')
   local result = vim.fn.system(string.format('git -C %s rev-parse --show-toplevel 2>/dev/null', vim.fn.shellescape(dir)))
   if vim.v.shell_error ~= 0 then
     return nil
