@@ -215,8 +215,8 @@ local function send_to_claude(pane_id, content)
     return false
   end
   
-  -- Paste buffer into Claude pane
-  local paste_cmd = string.format('tmux paste-buffer -b claude_temp -t %s 2>/dev/null', vim.fn.shellescape(pane_id))
+  -- Paste buffer into Claude pane (with -p to disable bracketed paste)
+  local paste_cmd = string.format('tmux paste-buffer -p -b claude_temp -t %s 2>/dev/null', vim.fn.shellescape(pane_id))
   vim.fn.system(paste_cmd)
   
   if vim.v.shell_error ~= 0 then
