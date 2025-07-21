@@ -187,14 +187,25 @@ local function create_context(filepath, selection, cwd)
     end
   end
   
+  -- Read the full file contents
+  local file = io.open(filepath, "r")
+  local full_content = ""
+  if file then
+    full_content = file:read("*a")
+    file:close()
+  end
+  
   return string.format([[<context>
-  <file>@%s</file>
+  <file>%s</file>
   <start_line>%d</start_line>
   <end_line>%d</end_line>
   <selection>
 %s
   </selection>
-</context>]], display_path, selection.start_line, selection.end_line, selection.text)
+  <file_content>
+%s
+  </file_content>
+</context>]], display_path, selection.start_line, selection.end_line, selection.text, full_content)
 end
 
 -- Send content to Claude and switch to pane

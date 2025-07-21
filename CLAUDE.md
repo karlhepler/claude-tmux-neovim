@@ -44,14 +44,14 @@ The plugin has been completely rewritten for speed and simplicity:
 
 - `find_claude_instances()` - Detect Claude processes and map to tmux
 - `get_selection()` - Get current line or visual selection
-- `create_context()` - Format XML with @ file references
+- `create_context()` - Format XML with file path and contents
 - `send_to_claude()` - Paste via tmux and switch focus
 
 ### XML Format
 
 ```xml
 <context>
-  <file>@/absolute/path/to/file.lua</file>
+  <file>relative/path/to/file.lua</file>
   <start_line>5</start_line>
   <end_line>8</end_line>
   <selection>
@@ -60,6 +60,9 @@ Line 6 content
 Line 7 content
 Line 8 content
   </selection>
+  <file_content>
+Full file contents here...
+  </file_content>
 </context>
 ```
 

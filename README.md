@@ -71,7 +71,7 @@ The plugin sends this XML format to Claude:
 
 ```xml
 <context>
-  <file>@/absolute/path/to/file.lua</file>
+  <file>relative/path/to/file.lua</file>
   <start_line>5</start_line>
   <end_line>8</end_line>
   <selection>
@@ -80,10 +80,13 @@ Line 6 content
 Line 7 content
 Line 8 content
   </selection>
+  <file_content>
+Full file contents here...
+  </file_content>
 </context>
 ```
 
-Claude Code's @ file reference feature allows it to look up the full file content.
+The file path is shown relative to Claude's working directory, and the full file contents are included for context.
 
 ## How It Works
 
