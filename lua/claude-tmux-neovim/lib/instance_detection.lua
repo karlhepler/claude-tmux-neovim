@@ -352,13 +352,7 @@ function M.is_claude_ready(instance)
   
   local content = content_result.output
   
-  -- Check for ready prompt (empty input box)
-  -- The prompt can have spaces after > and before the right border
-  if content:match("│ > *$") or content:match("│ > *│") then
-    return true
-  end
-  
-  -- Check for various blocking states
+  -- Check for various blocking states FIRST
   if content:match("Select a workspace") or content:match("Select your project") then
     return false, "In workspace selection menu"
   elseif content:match("Choose") or content:match("Select") then
@@ -377,20 +371,21 @@ function M.is_claude_ready(instance)
     return false, "Generating response"
   end
   
-  -- Check if prompt exists but has content
-  local prompt_content = content:match("│ > (.+)│")
-  if prompt_content and prompt_content:match("%S") then
-    return false, "Prompt has existing content"
-  end
-  
-  -- Check if we can find the prompt box structure
+  -- If we can find the prompt box structure, Claude is ready
+  -- (regardless of whether there's content in it)
   if content:match("╭─.*╮") and content:match("╰─.*╯") then
-    -- Has the box structure, likely ready unless we missed a state
+    -- Has the box structure, Claude is ready to accept input
     return true
   end
   
-  -- Default to not ready if we can't determine state
-  return false, "Cannot determine Claude state"
+  -- Check for the prompt indicator (with or without content)
+  if content:match("│%s*>") then
+    -- Found the prompt indicator, Claude is ready
+    return true
+  end
+  
+  -- Default to not ready if we can't find prompt structure
+  return false, "Cannot find Claude prompt"
 end
 
 --- Add display information to an instance
