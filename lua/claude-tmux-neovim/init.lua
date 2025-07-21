@@ -133,10 +133,15 @@ local function get_selection()
   local mode = vim.fn.mode()
   local text, start_line, end_line
   
+  -- Debug output
+  vim.notify(string.format("DEBUG: get_selection mode: %s", mode), vim.log.levels.INFO)
+  
   if mode:match("[vV\22]") then
     -- Visual mode - get full lines
     start_line = vim.fn.line("'<")
     end_line = vim.fn.line("'>")
+    
+    vim.notify(string.format("DEBUG: Visual mode - start: %d, end: %d", start_line, end_line), vim.log.levels.INFO)
     
     -- Get all lines in the range
     local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
@@ -148,6 +153,8 @@ local function get_selection()
     text = vim.fn.getline(".")
   end
   
+  vim.notify(string.format("DEBUG: Selection - lines %d-%d, text length: %d", start_line, end_line, #text), vim.log.levels.INFO)
+  
   return {
     text = text,
     start_line = start_line,
@@ -158,8 +165,20 @@ end
 -- Create XML context
 ---@param filepath string
 ---@param selection table
+---@param cwd string|nil Claude instance working directory
 ---@return string xml
-local function create_context(filepath, selection)
+local function create_context(filepath, selection, cwd)
+  -- Make filepath relative to cwd if provided
+  local display_path = filepath
+  if cwd then
+    -- Remove trailing slash from cwd if present
+    cwd = cwd:gsub("/$", "")
+    -- Make path relative if it starts with cwd
+    if filepath:sub(1, #cwd) == cwd then
+      display_path = filepath:sub(#cwd + 2) -- +2 to skip the directory and slash
+    end
+  end
+  
   return string.format([[<context>
   <file>@%s</file>
   <start_line>%d</start_line>
@@ -167,7 +186,7 @@ local function create_context(filepath, selection)
   <selection>
 %s
   </selection>
-</context>]], filepath, selection.start_line, selection.end_line, selection.text)
+</context>]], display_path, selection.start_line, selection.end_line, selection.text)
 end
 
 -- Send content to Claude and switch to pane
@@ -245,7 +264,7 @@ local function create_new_claude(flags, selection)
   vim.fn.system("sleep 3")
   
   -- Send context
-  local xml = create_context(filepath, selection)
+  local xml = create_context(filepath, selection, git_root)
   return send_to_claude(pane_id, xml)
 end
 
@@ -269,7 +288,7 @@ local function use_instance(instance, selection)
   end
   
   -- Send context
-  local xml = create_context(filepath, selection)
+  local xml = create_context(filepath, selection, instance.cwd)
   return send_to_claude(instance.pane_id, xml)
 end
 
@@ -366,18 +385,10 @@ function M.setup(opts)
   local keymap_opts = { noremap = true, silent = true }
   
   vim.keymap.set({'n', 'v'}, opts.send_keymap or '<leader>cc', function()
-    -- Exit visual mode first if in visual mode
-    if vim.fn.mode():match("[vV\22]") then
-      vim.cmd('normal! gv')
-    end
     M.send_to_existing()
   end, keymap_opts)
   
   vim.keymap.set({'n', 'v'}, opts.new_keymap or '<leader>cn', function()
-    -- Exit visual mode first if in visual mode
-    if vim.fn.mode():match("[vV\22]") then
-      vim.cmd('normal! gv')
-    end
     M.create_and_send()
   end, keymap_opts)
 end
