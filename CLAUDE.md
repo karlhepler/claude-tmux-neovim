@@ -21,8 +21,8 @@ The plugin has been completely rewritten for speed and simplicity:
 ## Core Workflow
 
 1. **Capture context**: Get current/selected lines with line numbers
-2. **Find Claude**: Use `ps aux | grep '\d\d claude'` to find processes
-3. **Map to tmux**: Get parent PID to find tmux pane
+2. **Find Claude**: Use robust pattern to find all Claude processes
+3. **Map to tmux**: Check both parent PID and process PID for tmux pane
 4. **Filter by repo**: Only show instances in same git repository
 5. **Send XML**: Format and paste via tmux buffers
 6. **Switch focus**: Move to Claude pane after pasting
@@ -89,7 +89,8 @@ Line 8 content
 
 ## Implementation Notes
 
-- Claude detection uses pattern `\d\d claude` (timestamp before command)
-- Parent PID mapping needed because tmux shows shell PID, not Claude PID
+- Claude detection uses pattern `(^|[[:space:]])claude([[:space:]]|$)` to match Claude as a standalone word
+- Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
 - Instance picker shows tmux pane IDs for verification
 - Ready check only verifies input box exists (│ character)
+- Increased initialization wait from 2s to 3s for better reliability

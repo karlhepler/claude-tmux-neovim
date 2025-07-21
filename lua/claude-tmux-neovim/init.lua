@@ -20,10 +20,12 @@ local function find_claude_instances(git_root)
   local instances = {}
   
   -- Single pipeline to find Claude processes with their CWDs and tmux panes
-  local cmd = [[ps aux | grep '\d\d claude' | grep -v grep | awk '{print $2}' | while read pid; do ]] ..
+  -- Pattern matches 'claude' as a standalone word (handles trailing spaces)
+  -- Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
+  local cmd = [[ps aux | grep -E '(^|[[:space:]])claude([[:space:]]|$)' | grep -v grep | awk '{print $2}' | while read pid; do ]] ..
               [[cwd=$(lsof -p $pid 2>/dev/null | grep cwd | awk '{print $NF}'); ]] ..
               [[ppid=$(ps -p $pid -o ppid= | tr -d ' '); ]] ..
-              [[pane_info=$(tmux list-panes -a -F "#{pane_pid} #{pane_id} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | grep "^$ppid " | awk '{print $2, $3}'); ]] ..
+              [[pane_info=$(tmux list-panes -a -F "#{pane_pid} #{pane_id} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | grep -E "^($ppid|$pid) " | awk '{print $2, $3}'); ]] ..
               [[if [ -n "$cwd" ] && [ -n "$pane_info" ]; then echo "$pid|$cwd|$pane_info"; fi; ]] ..
               [[done]]
   
@@ -225,8 +227,8 @@ local function create_new_claude(flags, selection)
     return false
   end
   
-  -- Wait for Claude to start
-  vim.fn.system("sleep 2")
+  -- Wait for Claude to start and fully initialize
+  vim.fn.system("sleep 3")
   
   -- Send context
   local xml = create_context(filepath, selection)

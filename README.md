@@ -15,7 +15,7 @@ For a fresh Claude session, use `<leader>cn` instead.
 ## Features
 
 - **< 50ms response time** - Nearly instant operation
-- **Smart instance detection** - Finds Claude processes via `ps aux | grep '\d\d claude'`
+- **Smart instance detection** - Reliably finds all Claude processes
 - **Git-aware** - Only shows Claude instances in the same repository
 - **Visual mode support** - Send selected lines or current line
 - **Instance picker** - Choose between multiple Claude instances or create new
@@ -87,8 +87,8 @@ Claude Code's @ file reference feature allows it to look up the full file conten
 
 ## How It Works
 
-1. **Detect Claude**: Uses `ps aux | grep '\d\d claude'` to find processes
-2. **Map to tmux**: Gets parent PID to find the tmux pane
+1. **Detect Claude**: Uses robust pattern matching to find all Claude processes
+2. **Map to tmux**: Checks both parent PID and process PID for tmux pane mapping
 3. **Filter by repo**: Shows only instances in the same git repository
 4. **Send context**: Formats XML and pastes via tmux buffers
 5. **Switch focus**: Automatically moves to Claude pane
