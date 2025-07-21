@@ -313,6 +313,12 @@ function M.send_to_existing()
   local selection = get_selection()
   local instances = find_claude_instances(git_root)
   
+  -- Debug output
+  vim.notify(string.format("Found %d Claude instances in git root: %s", #instances, git_root))
+  for i, instance in ipairs(instances) do
+    vim.notify(string.format("  Instance %d: PID=%s, CWD=%s, Pane=%s", i, instance.pid, instance.cwd, instance.pane_id))
+  end
+  
   if #instances == 0 then
     -- No instances, create new with --continue
     create_new_claude("--continue", selection)
