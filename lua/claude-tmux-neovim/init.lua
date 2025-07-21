@@ -1,181 +1,363 @@
----@brief Claude-Tmux-Neovim - Send context from Neovim to Claude Code in tmux
----
---- A Neovim plugin for sending code context to Claude Code AI assistant 
---- in a tmux session. Uses XML format to provide structured context.
----
---- Author: Karl Hepler (karlhepler)
---- License: MIT
-
--- Import modules
-local config = require('claude-tmux-neovim.lib.config')
-local util = require('claude-tmux-neovim.lib.util')
-local tmux = require('claude-tmux-neovim.lib.tmux')
-local context = require('claude-tmux-neovim.lib.context')
-local debug = require('claude-tmux-neovim.lib.debug')
-
--- Define module
+---@brief Fast Claude-Tmux-Neovim plugin for sending code context to Claude
 local M = {}
 
--- Set up autocommand for buffer reloading
-local function setup_buffer_reload()
-  -- Create autocommand for buffer reloading when focus returns to Neovim
-  vim.cmd([[
-    augroup claude_tmux_buffer_reload
-      autocmd!
-      autocmd FocusGained * lua require('claude-tmux-neovim.lib.tmux').reload_buffers()
-    augroup END
-  ]])
-end
-
-
---- Create a new Claude Code instance and send context
----@return table|nil The created instance or nil if failed
-function M.create_new_instance()
-  -- Get git root
-  local git_root = util.get_git_root()
-  if not git_root then
-    vim.schedule(function()
-      vim.notify("Not in a git repository", vim.log.levels.WARN)
-    end)
+-- Get git root of current file
+---@param filepath string
+---@return string|nil git_root
+local function get_git_root(filepath)
+  local dir = vim.fn.fnamemodify(filepath, ':h')
+  local result = vim.fn.system(string.format('git -C %s rev-parse --show-toplevel 2>/dev/null', vim.fn.shellescape(dir)))
+  if vim.v.shell_error ~= 0 then
     return nil
   end
+  return vim.trim(result)
+end
+
+-- Find all Claude instances in the same git repository
+---@param git_root string
+---@return table[] instances
+local function find_claude_instances(git_root)
+  local instances = {}
   
-  -- Create a new instance with plain "claude" command (no flags)
-  local new_instance = tmux.create_claude_code_instance(git_root)
+  -- Single pipeline to find Claude processes with their CWDs and tmux panes
+  local cmd = [[ps aux | grep '\d\d claude' | grep -v grep | awk '{print $2}' | while read pid; do ]] ..
+              [[cwd=$(lsof -p $pid 2>/dev/null | grep cwd | awk '{print $NF}'); ]] ..
+              [[ppid=$(ps -p $pid -o ppid= | tr -d ' '); ]] ..
+              [[pane_info=$(tmux list-panes -a -F "#{pane_pid} #{pane_id} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | grep "^$ppid " | awk '{print $2, $3}'); ]] ..
+              [[if [ -n "$cwd" ] && [ -n "$pane_info" ]; then echo "$pid|$cwd|$pane_info"; fi; ]] ..
+              [[done]]
   
+  local result = vim.fn.system(cmd)
   
-  -- If instance was created successfully, send context to it (for normal mode)
-  if new_instance and not vim.fn.mode():match("[vV\22]") then
-    -- Create context payload
-    local context_data = context.create_context({})
-    if context_data then
-      -- Format context as XML
-      local xml = context.format_context_xml(context_data)
-      
-      -- Send to the new Claude Code instance
-      tmux.send_to_claude_code(new_instance, xml)
+  for line in result:gmatch("[^\r\n]+") do
+    local pid, cwd, pane_id, display = line:match("^(%d+)|([^|]+)|(%S+)%s+(.+)$")
+    if pid and cwd and pane_id then
+      -- Check if this instance is in the same git repository
+      local instance_git_root = get_git_root(cwd)
+      if instance_git_root == git_root then
+        table.insert(instances, {
+          pid = pid,
+          cwd = cwd,
+          pane_id = pane_id,
+          display = display or pane_id,
+        })
+      end
     end
   end
   
-  return new_instance
+  return instances
 end
 
-
---- Toggle debug mode
-function M.toggle_debug()
-  vim.g.claude_tmux_neovim_debug = not vim.g.claude_tmux_neovim_debug
-  vim.notify("Claude Code debug mode: " .. (vim.g.claude_tmux_neovim_debug and "ON" or "OFF"), vim.log.levels.INFO)
+-- Sort instances by closest parent to file path
+---@param instances table[]
+---@param filepath string
+---@return table[] sorted_instances
+local function sort_by_closest_parent(instances, filepath)
+  local file_dir = vim.fn.fnamemodify(filepath, ':h')
   
-  if vim.g.claude_tmux_neovim_debug then
-    debug.init() -- Initialize debug log file
-    vim.notify("Debug log file created at: " .. vim.fn.stdpath('cache') .. '/claude-tmux-neovim-debug.log', vim.log.levels.INFO)
+  table.sort(instances, function(a, b)
+    -- Calculate how many path components match
+    local a_parts = vim.split(a.cwd, '/')
+    local b_parts = vim.split(b.cwd, '/')
+    local file_parts = vim.split(file_dir, '/')
+    
+    local a_matches = 0
+    local b_matches = 0
+    
+    for i = 1, math.min(#a_parts, #file_parts) do
+      if a_parts[i] == file_parts[i] then
+        a_matches = a_matches + 1
+      else
+        break
+      end
+    end
+    
+    for i = 1, math.min(#b_parts, #file_parts) do
+      if b_parts[i] == file_parts[i] then
+        b_matches = b_matches + 1
+      else
+        break
+      end
+    end
+    
+    return a_matches > b_matches
+  end)
+  
+  return instances
+end
+
+-- Check if Claude is ready (has input box visible)
+---@param pane_id string
+---@return boolean is_ready
+---@return string|nil error_msg
+local function is_claude_ready(pane_id)
+  local cmd = string.format('tmux capture-pane -p -t %s -S -10 2>/dev/null', vim.fn.shellescape(pane_id))
+  local content = vim.fn.system(cmd)
+  
+  if vim.v.shell_error ~= 0 then
+    return false, "Claude instance was closed"
   end
-end
-
---- Show debug log in a split window
-function M.show_debug_log()
-  debug.show_log()
-end
-
---- Clear debug log file
-function M.clear_debug_log()
-  debug.clear_log()
-end
-
---- Manually reload buffers to reflect changes from Claude Code
-function M.reload_buffers()
-  tmux.reload_buffers()
-  vim.notify("All buffers reloaded", vim.log.levels.INFO)
-end
-
---- Main function to send context
----@param opts table|nil Command options including range information
-function M.send_context(opts)
-  -- Create context payload
-  local context_data = context.create_context(opts)
-  if not context_data then
-    return
+  
+  -- Check for input box boundary (│ character)
+  if not content:match("│") then
+    return false, nil
   end
   
-  -- Format context as XML
-  local xml = context.format_context_xml(context_data)
+  -- Check for common blocking prompts
+  if content:match("Select") or content:match("Choose") or content:match("Press Enter") then
+    return false, "Claude is waiting for your input and cannot receive data"
+  end
   
-  -- Send to Claude Code instance
-  tmux.with_claude_code_instance(context_data.git_root, function(instance)
-    if instance then
-      tmux.send_to_claude_code(instance, xml)
+  return true, nil
+end
+
+-- Get selection or current line
+---@return table selection_info
+local function get_selection()
+  local mode = vim.fn.mode()
+  local text, start_line, end_line
+  
+  if mode:match("[vV\22]") then
+    -- Visual mode - get full lines
+    start_line = vim.fn.line("'<")
+    end_line = vim.fn.line("'>")
+    
+    -- Get all lines in the range
+    local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
+    text = table.concat(lines, "\n")
+  else
+    -- Normal mode - get current line
+    start_line = vim.fn.line(".")
+    end_line = start_line
+    text = vim.fn.getline(".")
+  end
+  
+  return {
+    text = text,
+    start_line = start_line,
+    end_line = end_line,
+  }
+end
+
+-- Create XML context
+---@param filepath string
+---@param selection table
+---@return string xml
+local function create_context(filepath, selection)
+  return string.format([[<context>
+  <file>@%s</file>
+  <start_line>%d</start_line>
+  <end_line>%d</end_line>
+  <selection>
+%s
+  </selection>
+</context>]], filepath, selection.start_line, selection.end_line, selection.text)
+end
+
+-- Send content to Claude and switch to pane
+---@param pane_id string
+---@param content string
+---@return boolean success
+local function send_to_claude(pane_id, content)
+  -- Load content into tmux buffer
+  local temp_file = os.tmpname()
+  local file = io.open(temp_file, "w")
+  if not file then
+    vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
+    return false
+  end
+  file:write(content)
+  file:close()
+  
+  -- Load buffer and paste
+  local load_cmd = string.format('tmux load-buffer -b claude_temp %s 2>/dev/null', vim.fn.shellescape(temp_file))
+  vim.fn.system(load_cmd)
+  os.remove(temp_file)
+  
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Failed to load content into tmux buffer", vim.log.levels.ERROR)
+    return false
+  end
+  
+  -- Paste buffer into Claude pane
+  local paste_cmd = string.format('tmux paste-buffer -b claude_temp -t %s 2>/dev/null', vim.fn.shellescape(pane_id))
+  vim.fn.system(paste_cmd)
+  
+  if vim.v.shell_error ~= 0 then
+    vim.notify("Failed to paste into Claude", vim.log.levels.ERROR)
+    return false
+  end
+  
+  -- Delete the buffer
+  vim.fn.system('tmux delete-buffer -b claude_temp 2>/dev/null')
+  
+  -- Switch to Claude pane
+  local switch_cmd = string.format('tmux switch-client -t %s 2>/dev/null || tmux select-pane -t %s 2>/dev/null', 
+                                   vim.fn.shellescape(pane_id), vim.fn.shellescape(pane_id))
+  vim.fn.system(switch_cmd)
+  
+  return true
+end
+
+-- Create new Claude instance
+---@param flags string
+---@param selection table
+---@return boolean success
+local function create_new_claude(flags, selection)
+  local filepath = vim.fn.expand('%:p')
+  local git_root = get_git_root(filepath)
+  
+  if not git_root then
+    vim.notify("Not in a git repository", vim.log.levels.WARN)
+    return false
+  end
+  
+  -- Create the command
+  local claude_cmd = flags ~= "" and string.format("claude %s", flags) or "claude"
+  
+  -- Create new tmux window with Claude
+  local cmd = string.format("tmux new-window -c %s -n claude -P -F '#{pane_id}' %s", 
+                           vim.fn.shellescape(git_root), vim.fn.shellescape(claude_cmd))
+  local pane_id = vim.trim(vim.fn.system(cmd))
+  
+  if vim.v.shell_error ~= 0 or pane_id == "" then
+    vim.notify("Failed to create Claude instance", vim.log.levels.ERROR)
+    return false
+  end
+  
+  -- Wait for Claude to start
+  vim.fn.system("sleep 2")
+  
+  -- Send context
+  local xml = create_context(filepath, selection)
+  return send_to_claude(pane_id, xml)
+end
+
+-- Use existing Claude instance
+---@param instance table
+---@param selection table
+---@return boolean success
+local function use_instance(instance, selection)
+  local filepath = vim.fn.expand('%:p')
+  
+  -- Check if Claude is ready
+  local is_ready, error_msg = is_claude_ready(instance.pane_id)
+  if not is_ready then
+    if error_msg then
+      vim.notify(error_msg, vim.log.levels.ERROR)
+    end
+    -- Switch to Claude anyway so user can see what's blocking
+    vim.fn.system(string.format('tmux switch-client -t %s 2>/dev/null || tmux select-pane -t %s 2>/dev/null', 
+                               vim.fn.shellescape(instance.pane_id), vim.fn.shellescape(instance.pane_id)))
+    return false
+  end
+  
+  -- Send context
+  local xml = create_context(filepath, selection)
+  return send_to_claude(instance.pane_id, xml)
+end
+
+-- Show instance picker
+---@param instances table[]
+---@param selection table
+local function show_instance_picker(instances, selection)
+  local items = {}
+  
+  -- Add existing instances
+  for _, instance in ipairs(instances) do
+    table.insert(items, {
+      text = string.format("%s (%s) - %s", instance.pane_id, instance.display, instance.cwd),
+      instance = instance,
+    })
+  end
+  
+  -- Add "Create new" option
+  table.insert(items, {
+    text = "Create new Claude instance",
+    create_new = true,
+  })
+  
+  -- Show picker
+  vim.ui.select(items, {
+    prompt = "Select Claude instance:",
+    format_item = function(item) return item.text end,
+  }, function(choice)
+    if not choice then
+      return
+    end
+    
+    if choice.create_new then
+      create_new_claude("--continue", selection)
+    else
+      use_instance(choice.instance, selection)
     end
   end)
 end
 
---- Plugin setup function
----@param user_config table|nil User configuration options
-function M.setup(user_config)
-  -- Initialize configuration
-  config.setup(user_config)
-  
-  -- Set global debug flag based on config
-  vim.g.claude_tmux_neovim_debug = config.get().debug
-  
-  -- Initialize debug log if debug mode is enabled
-  if vim.g.claude_tmux_neovim_debug then
-    debug.init()
+-- Main function for <leader>cc
+function M.send_to_existing()
+  local filepath = vim.fn.expand('%:p')
+  if filepath == "" then
+    vim.notify("No file open", vim.log.levels.WARN)
+    return
   end
   
-  -- Set up buffer reloading if enabled
-  if config.get().auto_reload_buffers then
-    setup_buffer_reload()
+  local git_root = get_git_root(filepath)
+  if not git_root then
+    vim.notify("Not in a git repository", vim.log.levels.WARN)
+    return
   end
   
-  -- Create wrapper function to silently send context
-  local function silent_send_context(opts)
-    -- Use pcall to suppress errors
-    local ok, err = pcall(function()
-      M.send_context(opts)
-    end)
-    
-    -- Only show critical errors
-    if not ok and err then
-      vim.notify("Claude Code error: " .. err, vim.log.levels.ERROR)
+  local selection = get_selection()
+  local instances = find_claude_instances(git_root)
+  
+  if #instances == 0 then
+    -- No instances, create new with --continue
+    create_new_claude("--continue", selection)
+  elseif #instances == 1 then
+    -- Single instance, use it
+    use_instance(instances[1], selection)
+  else
+    -- Multiple instances, sort by closest parent and show picker
+    instances = sort_by_closest_parent(instances, filepath)
+    show_instance_picker(instances, selection)
+  end
+end
+
+-- Main function for <leader>cn
+function M.create_and_send()
+  local filepath = vim.fn.expand('%:p')
+  if filepath == "" then
+    vim.notify("No file open", vim.log.levels.WARN)
+    return
+  end
+  
+  local selection = get_selection()
+  create_new_claude("", selection)
+end
+
+-- Setup function
+function M.setup(opts)
+  opts = opts or {}
+  
+  -- Set up keymaps
+  local keymap_opts = { noremap = true, silent = true }
+  
+  vim.keymap.set({'n', 'v'}, opts.send_keymap or '<leader>cc', function()
+    -- Exit visual mode first if in visual mode
+    if vim.fn.mode():match("[vV\22]") then
+      vim.cmd('normal! gv')
     end
-    
-    -- Clear command line
-    vim.cmd("echo ''")
-  end
+    M.send_to_existing()
+  end, keymap_opts)
   
-  -- Create user commands with {silent=true}
-  vim.api.nvim_create_user_command("ClaudeCodeSend", silent_send_context, { range = true, bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeNew", M.create_new_instance, { bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeDebug", M.toggle_debug, { bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeShowLog", M.show_debug_log, { bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeClearLog", M.clear_debug_log, { bang = true })
-  vim.api.nvim_create_user_command("ClaudeCodeReload", M.reload_buffers, { bang = true })
-  
-  -- Set up keymapping using a Lua function callback for complete silence
-  if config.get().keymap and config.get().keymap ~= "" then
-    -- Normal mode - use Lua function directly instead of command
-    vim.api.nvim_set_keymap('n', config.get().keymap, 
-      [[<cmd>lua require('claude-tmux-neovim.lib.silent').send_normal()<CR>]], 
-      { noremap = true, silent = true })
-    
-    -- For visual mode, use a more direct approach with :xnoremap to ensure it works properly
-    vim.api.nvim_set_keymap('x', config.get().keymap, 
-      [[<ESC>:lua require('claude-tmux-neovim.lib.silent').send_visual()<CR>]], 
-      { noremap = true, silent = true })
-  end
-  
-  -- Set up create new instance keymap
-  if config.get().keymap_new and config.get().keymap_new ~= "" then
-    -- Normal mode - create new Claude instance
-    vim.api.nvim_set_keymap('n', config.get().keymap_new,
-      [[<cmd>lua require('claude-tmux-neovim').create_new_instance()<CR>]],
-      { noremap = true, silent = true })
-    
-    -- Visual mode - create new Claude instance with visual selection
-    vim.api.nvim_set_keymap('x', config.get().keymap_new,
-      [[<ESC>:lua require('claude-tmux-neovim.lib.silent').create_new_visual()<CR>]],
-      { noremap = true, silent = true })
-  end
+  vim.keymap.set({'n', 'v'}, opts.new_keymap or '<leader>cn', function()
+    -- Exit visual mode first if in visual mode
+    if vim.fn.mode():match("[vV\22]") then
+      vim.cmd('normal! gv')
+    end
+    M.create_and_send()
+  end, keymap_opts)
 end
 
 return M
