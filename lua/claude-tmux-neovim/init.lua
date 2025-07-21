@@ -137,9 +137,17 @@ local function get_selection()
   vim.notify(string.format("DEBUG: get_selection mode: %s", mode), vim.log.levels.INFO)
   
   if mode:match("[vV\22]") then
-    -- Visual mode - get full lines
-    start_line = vim.fn.line("'<")
-    end_line = vim.fn.line("'>")
+    -- Visual mode - use vim.fn.getpos to get current selection
+    local vstart = vim.fn.getpos("v")
+    local vend = vim.fn.getpos(".")
+    
+    -- Ensure start comes before end
+    if vstart[2] > vend[2] then
+      vstart, vend = vend, vstart
+    end
+    
+    start_line = vstart[2]
+    end_line = vend[2]
     
     vim.notify(string.format("DEBUG: Visual mode - start: %d, end: %d", start_line, end_line), vim.log.levels.INFO)
     
