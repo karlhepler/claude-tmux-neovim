@@ -19,6 +19,9 @@ end
 local function find_claude_instances(git_root)
   local instances = {}
   
+  -- Debug: log the git root we're searching for
+  vim.notify(string.format("DEBUG: Searching for Claude instances in git_root: %s", git_root), vim.log.levels.INFO)
+  
   -- Single pipeline to find Claude processes with their CWDs and tmux panes
   -- Pattern matches 'claude' as a standalone word (handles trailing spaces)
   -- Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
@@ -31,19 +34,29 @@ local function find_claude_instances(git_root)
   
   local result = vim.fn.system(cmd)
   
+  -- Debug: log the raw result
+  vim.notify(string.format("DEBUG: Raw command result: %s", vim.inspect(result)), vim.log.levels.INFO)
+  
   for line in result:gmatch("[^\r\n]+") do
     local pid, cwd, pane_id, display = line:match("^(%d+)|([^|]+)|(%S+)%s+(.+)$")
+    vim.notify(string.format("DEBUG: Processing line: %s", line), vim.log.levels.INFO)
     if pid and cwd and pane_id then
       -- Check if this instance is in the same git repository
       local instance_git_root = get_git_root(cwd)
+      vim.notify(string.format("DEBUG: Instance git_root: %s, target git_root: %s", instance_git_root or "nil", git_root), vim.log.levels.INFO)
       if instance_git_root == git_root then
+        vim.notify(string.format("DEBUG: Adding instance - PID: %s, CWD: %s, Pane: %s", pid, cwd, pane_id), vim.log.levels.INFO)
         table.insert(instances, {
           pid = pid,
           cwd = cwd,
           pane_id = pane_id,
           display = display or pane_id,
         })
+      else
+        vim.notify(string.format("DEBUG: Skipping instance - different git root", pid), vim.log.levels.INFO)
       end
+    else
+      vim.notify(string.format("DEBUG: Failed to parse line: %s", line), vim.log.levels.INFO)
     end
   end
   
