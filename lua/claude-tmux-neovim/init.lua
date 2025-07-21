@@ -245,6 +245,10 @@ local function send_to_claude(pane_id, content)
   -- Delete the buffer
   vim.fn.system('tmux delete-buffer -b claude_temp 2>/dev/null')
   
+  -- Move cursor to end of pasted content
+  local end_cmd = string.format('tmux send-keys -t %s C-e 2>/dev/null', vim.fn.shellescape(pane_id))
+  vim.fn.system(end_cmd)
+  
   -- Switch to Claude pane
   local switch_cmd = string.format('tmux switch-client -t %s 2>/dev/null || tmux select-pane -t %s 2>/dev/null', 
                                    vim.fn.shellescape(pane_id), vim.fn.shellescape(pane_id))
