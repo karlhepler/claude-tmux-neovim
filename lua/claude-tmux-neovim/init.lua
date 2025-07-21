@@ -22,7 +22,7 @@ local function find_claude_instances(git_root)
   -- Single pipeline to find Claude processes with their CWDs and tmux panes
   -- Pattern matches 'claude' as a standalone word (handles trailing spaces)
   -- Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
-  local cmd = [[ps aux | grep -E '(^|[[:space:]])claude([[:space:]]|$)' | grep -v grep | awk '{print $2}' | while read pid; do ]] ..
+  local cmd = [[ps aux | grep -E "(^|[[:space:]])claude([[:space:]]|$)" | grep -v grep | awk '{print $2}' | while read pid; do ]] ..
               [[cwd=$(lsof -p $pid 2>/dev/null | grep cwd | awk '{print $NF}'); ]] ..
               [[ppid=$(ps -p $pid -o ppid= | tr -d ' '); ]] ..
               [[pane_info=$(tmux list-panes -a -F "#{pane_pid} #{pane_id} #{session_name}:#{window_index}.#{pane_index}" 2>/dev/null | grep -E "^($ppid|$pid) " | awk '{print $2, $3}'); ]] ..
