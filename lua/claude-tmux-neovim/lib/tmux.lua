@@ -48,6 +48,29 @@ function M.get_claude_code_instances(git_root)
   local current_session = vim.fn.system(current_session_cmd):gsub("%s+$", "")
   debug.log("Current tmux session: " .. current_session)
   
+  -- Import instance detection module
+  local instance_detection = require('claude-tmux-neovim.lib.instance_detection')
+  
+  -- PRIORITY 1: Try process-first detection (most reliable)
+  local instances = instance_detection.detect_claude_by_process(git_root)
+  
+  if #instances > 0 then
+    debug.log("Process-first detection found " .. #instances .. " Claude instances, using those")
+    -- Sort instances with current session first
+    table.sort(instances, function(a, b)
+      if a.is_current_session and not b.is_current_session then
+        return true
+      elseif not a.is_current_session and b.is_current_session then
+        return false
+      else
+        return a.pane_id < b.pane_id
+      end
+    end)
+    return instances
+  end
+  
+  debug.log("No instances found by process detection, falling back to standard methods")
+  
   -- Full search across all sessions (reliable detection)
   debug.log("Performing comprehensive search across all sessions")
   local list_panes_cmd = [[tmux list-panes -a -F '#{pane_id} #{session_name} #{window_name} #{window_index} #{pane_index} #{pane_current_command} #{pane_current_path}']]
@@ -719,9 +742,93 @@ function M.send_to_claude_code(instance, context)
       instance.pane_id = alternative_pane
     else
       debug.log("Failed to find alternative pane ID!")
+      os.remove(temp_file)
       return false
     end
   end
+  
+  -- CRITICAL: Comprehensive verification before pasting!
+  -- This prevents pasting to wrong terminals
+  local tmux_cmd = require('claude-tmux-neovim.lib.tmux_commands')
+  
+  -- Multi-layered verification approach
+  local is_verified_claude = false
+  local verification_methods = {}
+  
+  -- Check 1: Process verification (most reliable)
+  if tmux_cmd.is_claude_process(instance.pane_id) then
+    debug.log("VERIFIED: Claude process detected in target pane")
+    table.insert(verification_methods, "process")
+    is_verified_claude = true
+  end
+  
+  -- Check 2: Prompt verification (visual confirmation)
+  if tmux_cmd.has_claude_prompt(instance.pane_id) then
+    debug.log("VERIFIED: Claude prompt detected in target pane")
+    table.insert(verification_methods, "prompt")
+    is_verified_claude = true
+  end
+  
+  -- Check 3: Window name verification (weakest but still useful)
+  if instance.window_name and instance.window_name:lower() == "claude" then
+    debug.log("VERIFIED: Window name is 'claude'")
+    table.insert(verification_methods, "window_name")
+    -- Window name alone is not sufficient
+  end
+  
+  -- Special handling for new instances
+  if instance.detection_method == "[new]" and not is_verified_claude then
+    debug.log("New instance - waiting longer for Claude to initialize...")
+    vim.fn.system("sleep 2.0")
+    
+    -- Re-check after waiting
+    if tmux_cmd.is_claude_process(instance.pane_id) then
+      debug.log("VERIFIED: Claude process detected after wait")
+      is_verified_claude = true
+    elseif tmux_cmd.has_claude_prompt(instance.pane_id) then
+      debug.log("VERIFIED: Claude prompt detected after wait")
+      is_verified_claude = true
+    end
+  end
+  
+  -- Final decision
+  if not is_verified_claude then
+    debug.log("ERROR: Target pane failed ALL Claude verification checks!")
+    debug.log("Verification methods tried: " .. vim.inspect(verification_methods))
+    vim.notify("SAFETY: Refusing to paste - target does not appear to be Claude", vim.log.levels.ERROR)
+    os.remove(temp_file)
+    return false
+  end
+  
+  debug.log("Target pane verified as Claude using: " .. table.concat(verification_methods, ", "))
+  
+  -- Check if Claude is ready to receive input (not in a menu or processing)
+  local instance_detection = require('claude-tmux-neovim.lib.instance_detection')
+  local is_ready, state = instance_detection.is_claude_ready(instance)
+  
+  if not is_ready then
+    debug.log("Claude is not ready for input: " .. (state or "unknown state"))
+    
+    -- For new instances, wait a bit longer
+    if instance.detection_method == "[new]" then
+      debug.log("New instance in non-ready state, waiting longer...")
+      vim.fn.system("sleep 3.0")
+      
+      -- Check again
+      is_ready, state = instance_detection.is_claude_ready(instance)
+      if not is_ready then
+        vim.notify("Claude is not ready: " .. (state or "please try again"), vim.log.levels.ERROR)
+        os.remove(temp_file)
+        return false
+      end
+    else
+      vim.notify("Claude is busy or in a menu: " .. (state or "please try again"), vim.log.levels.ERROR)
+      os.remove(temp_file)
+      return false
+    end
+  end
+  
+  debug.log("Claude is ready to receive input")
   
   -- Ensure the window is active before pasting
   local window_cmd = string.format('tmux select-window -t %s:%s', 
@@ -730,6 +837,22 @@ function M.send_to_claude_code(instance, context)
   vim.fn.system(window_cmd)
   
   for retry = 1, max_retries do
+    -- On retries, verify Claude prompt is still there
+    if retry > 1 then
+      if not tmux_cmd.has_claude_prompt(instance.pane_id) then
+        debug.log("ERROR: Lost Claude prompt during retry " .. retry .. " - aborting")
+        break
+      end
+      debug.log("Claude prompt still present, continuing retry " .. retry)
+    end
+    
+    -- FINAL SAFETY CHECK: One more verification immediately before paste
+    if not tmux_cmd.is_claude_process(instance.pane_id) and not tmux_cmd.has_claude_prompt(instance.pane_id) then
+      debug.log("CRITICAL: Final safety check failed - target is not Claude!")
+      success = false
+      break
+    end
+    
     -- Paste content buffer into target pane (silently)
     local paste_cmd = string.format('tmux paste-buffer -b claude_context -t %s 2>/dev/null', instance.pane_id)
     debug.log("Attempting to paste with command: " .. paste_cmd)

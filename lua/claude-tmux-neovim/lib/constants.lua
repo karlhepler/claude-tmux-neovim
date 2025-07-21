@@ -27,6 +27,12 @@ M.PATTERNS = {
   CLAUDE_PROMPT = "╭─\\{1,\\}╮",      -- Claude's distinctive prompt pattern
   CLAUDE_PROMPT_WITH_CURSOR = "│ >", -- Claude prompt with cursor
   ERROR_PATTERNS = "failed\\|authentication failed\\|command not found",
+  -- Unicode hex patterns for better reliability
+  CLAUDE_PROMPT_HEX = "\\xe2\\x95\\xad\\xe2\\x94\\x80.*\\xe2\\x95\\xae", -- ╭─...╮ in UTF-8 hex
+  CLAUDE_PROMPT_ALTERNATIVE = "[╭][-─]+[╮]", -- More flexible pattern
+  -- Process detection patterns
+  CLAUDE_PROCESS_PATTERNS = "claude\\|anthropic\\|Claude\\|Anthropic",
+  CLAUDE_ENV_PATTERNS = "CLAUDE\\|ANTHROPIC",
 }
 
 -- Detection methods for Claude instances
@@ -36,6 +42,7 @@ M.DETECTION_METHODS = {
   NODE = "[node]",      -- Node.js process
   PROMPT = "[prompt]",  -- Claude prompt pattern
   PROC = "[proc]",      -- Process command line
+  PROCESS = "[process]", -- Process-first detection
   NAME = "[name]",      -- Window name
   RENAMED = "[renamed]", -- Window was renamed
   OTHER = "[other]",    -- Other detection method

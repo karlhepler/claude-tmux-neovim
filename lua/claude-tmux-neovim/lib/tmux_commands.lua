@@ -164,14 +164,120 @@ function M.get_pane_process(pane_id)
   return M.execute(cmd, "get process for pane " .. pane_id)
 end
 
+--- Get detailed process information including arguments for pane
+---@param pane_id string The pane ID
+---@return table result { output: string, success: boolean, is_claude: boolean }
+function M.get_pane_process_detailed(pane_id)
+  local constants = require('claude-tmux-neovim.lib.constants')
+  
+  -- Get the PID first
+  local pid_cmd = string.format("tmux display-message -p -t %s '#{pane_pid}'", pane_id)
+  local pid_result = M.execute(pid_cmd, "get PID for pane " .. pane_id)
+  
+  if not pid_result.success or pid_result.output == "" then
+    return { output = "", success = false, is_claude = false }
+  end
+  
+  local pid = pid_result.output
+  
+  -- GUARANTEED METHOD: Check if any child process is named "claude"
+  -- This works because ps shows "claude" as the command even when run via Node
+  local claude_check_cmd = string.format("pgrep -P %s claude 2>/dev/null", pid)
+  local claude_result = M.execute(claude_check_cmd, "check for claude child process")
+  
+  if claude_result.success and claude_result.output ~= "" then
+    -- Found a claude process as child of this pane
+    return { 
+      output = "claude process (PID: " .. claude_result.output:gsub("%s+", "") .. ")", 
+      success = true, 
+      is_claude = true 
+    }
+  end
+  
+  -- Fallback Method 1: Check full command line with arguments
+  local cmd = string.format("ps -o args= -p %s 2>/dev/null", pid)
+  local result = M.execute(cmd, "get full process args for PID " .. pid)
+  
+  -- Check if this is a Claude process
+  local is_claude = false
+  if result.success and result.output ~= "" then
+    local lower_output = result.output:lower()
+    is_claude = lower_output:match("claude") or lower_output:match("anthropic") ~= nil
+  end
+  
+  -- Fallback Method 2: Check process environment
+  if not is_claude then
+    cmd = string.format("ps eww -p %s 2>/dev/null | grep -E '%s' | head -1", 
+      pid, constants.PATTERNS.CLAUDE_ENV_PATTERNS)
+    local env_result = M.execute(cmd, "check process environment for Claude")
+    if env_result.success and env_result.output ~= "" then
+      is_claude = true
+      result.output = result.output .. " [ENV: Claude detected]"
+    end
+  end
+  
+  -- Fallback Method 3: Check if command is literally "claude"
+  local comm_cmd = string.format("ps -p %s -o comm= 2>/dev/null", pid)
+  local comm_result = M.execute(comm_cmd, "get process command name")
+  if comm_result.success and comm_result.output == "claude" then
+    is_claude = true
+    result.output = "claude"
+  end
+  
+  result.is_claude = is_claude
+  return result
+end
+
+--- Check if a pane is running Claude by examining its process
+---@param pane_id string The pane ID
+---@return boolean is_claude
+function M.is_claude_process(pane_id)
+  local result = M.get_pane_process_detailed(pane_id)
+  return result.is_claude
+end
+
 --- Check for Claude prompt pattern in pane
 ---@param pane_id string The pane ID
 ---@param pattern string The pattern to search for (default: Claude prompt)
 ---@return boolean has_pattern
 function M.has_claude_prompt(pane_id, pattern)
-  pattern = pattern or "╭─\\{1,\\}╮"
-  local cmd = string.format("tmux capture-pane -p -t %s -S -5 | grep -q '%s'", pane_id, pattern)
-  local result = M.execute(cmd, "check Claude prompt in " .. pane_id)
+  local constants = require('claude-tmux-neovim.lib.constants')
+  pattern = pattern or constants.PATTERNS.CLAUDE_PROMPT
+  
+  -- Try multiple detection methods for better Unicode handling
+  -- Method 1: Standard grep with Unicode pattern
+  local cmd = string.format("tmux capture-pane -p -t %s -S -10 | grep -q '%s'", pane_id, pattern)
+  local result = M.execute(cmd, "check Claude prompt (standard) in " .. pane_id)
+  if result.success then
+    return true
+  end
+  
+  -- Method 2: Try looking for box drawing characters directly
+  -- Using printf to generate the Unicode characters for comparison
+  cmd = string.format("tmux capture-pane -p -t %s -S -10 | grep -qF '╭'", pane_id)
+  result = M.execute(cmd, "check Claude prompt (box char) in " .. pane_id)
+  if result.success then
+    -- Also check for the closing character
+    cmd = string.format("tmux capture-pane -p -t %s -S -10 | grep -qF '╮'", pane_id)
+    result = M.execute(cmd, "check Claude prompt (closing box) in " .. pane_id)
+    if result.success then
+      return true
+    end
+  end
+  
+  -- Method 3: Try alternative pattern with character class
+  cmd = string.format("tmux capture-pane -p -t %s -S -10 | grep -qE '%s'", 
+    pane_id, constants.PATTERNS.CLAUDE_PROMPT_ALTERNATIVE)
+  result = M.execute(cmd, "check Claude prompt (alternative) in " .. pane_id)
+  if result.success then
+    return true
+  end
+  
+  -- Method 4: Look for the prompt with cursor pattern as fallback
+  cmd = string.format("tmux capture-pane -p -t %s -S -10 | grep -qF '%s'", 
+    pane_id, constants.PATTERNS.CLAUDE_PROMPT_WITH_CURSOR)
+  result = M.execute(cmd, "check Claude cursor prompt in " .. pane_id)
+  
   return result.success
 end
 
