@@ -20,9 +20,6 @@ end
 local function find_claude_instances(git_root)
   local instances = {}
   
-  -- Debug: log the git root we're searching for
-  vim.notify(string.format("DEBUG: Searching for Claude instances in git_root: %s", git_root), vim.log.levels.INFO)
-  
   -- Single pipeline to find Claude processes with their CWDs and tmux panes
   -- Pattern matches 'claude' as a standalone word (handles trailing spaces)
   -- Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
@@ -35,18 +32,12 @@ local function find_claude_instances(git_root)
   
   local result = vim.fn.system(cmd)
   
-  -- Debug: log the raw result
-  vim.notify(string.format("DEBUG: Raw command result: %s", vim.inspect(result)), vim.log.levels.INFO)
-  
   for line in result:gmatch("[^\r\n]+") do
     local pid, cwd, pane_id, display = line:match("^(%d+)|([^|]+)|(%S+)%s+(.+)$")
-    vim.notify(string.format("DEBUG: Processing line: %s", line), vim.log.levels.INFO)
     if pid and cwd and pane_id then
       -- Check if this instance is in the same git repository
       local instance_git_root = get_git_root(cwd)
-      vim.notify(string.format("DEBUG: Instance git_root: %s, target git_root: %s", instance_git_root or "nil", git_root), vim.log.levels.INFO)
       if instance_git_root == git_root then
-        vim.notify(string.format("DEBUG: Adding instance - PID: %s, CWD: %s, Pane: %s", pid, cwd, pane_id), vim.log.levels.INFO)
         table.insert(instances, {
           pid = pid,
           cwd = cwd,
@@ -54,10 +45,8 @@ local function find_claude_instances(git_root)
           display = display or pane_id,
         })
       else
-        vim.notify(string.format("DEBUG: Skipping instance - different git root", pid), vim.log.levels.INFO)
       end
     else
-      vim.notify(string.format("DEBUG: Failed to parse line: %s", line), vim.log.levels.INFO)
     end
   end
   
@@ -133,9 +122,6 @@ local function get_selection()
   local mode = vim.fn.mode()
   local text, start_line, end_line
   
-  -- Debug output
-  vim.notify(string.format("DEBUG: get_selection mode: %s", mode), vim.log.levels.INFO)
-  
   if mode:match("[vV\22]") then
     -- Visual mode - use vim.fn.getpos to get current selection
     local vstart = vim.fn.getpos("v")
@@ -149,8 +135,6 @@ local function get_selection()
     start_line = vstart[2]
     end_line = vend[2]
     
-    vim.notify(string.format("DEBUG: Visual mode - start: %d, end: %d", start_line, end_line), vim.log.levels.INFO)
-    
     -- Get all lines in the range
     local lines = vim.api.nvim_buf_get_lines(0, start_line - 1, end_line, false)
     text = table.concat(lines, "\n")
@@ -160,8 +144,6 @@ local function get_selection()
     end_line = start_line
     text = vim.fn.getline(".")
   end
-  
-  vim.notify(string.format("DEBUG: Selection - lines %d-%d, text length: %d", start_line, end_line, #text), vim.log.levels.INFO)
   
   return {
     text = text,
@@ -364,12 +346,6 @@ function M.send_to_existing()
   
   local selection = get_selection()
   local instances = find_claude_instances(git_root)
-  
-  -- Debug output
-  vim.notify(string.format("Found %d Claude instances in git root: %s", #instances, git_root), vim.log.levels.INFO)
-  for i, instance in ipairs(instances) do
-    vim.notify(string.format("  Instance %d: PID=%s, CWD=%s, Pane=%s", i, instance.pid, instance.cwd, instance.pane_id), vim.log.levels.INFO)
-  end
   
   if #instances == 0 then
     -- No instances, create new with --continue
