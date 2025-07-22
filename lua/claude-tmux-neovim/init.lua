@@ -169,14 +169,6 @@ local function create_context(filepath, selection, cwd)
     end
   end
   
-  -- Read the full file contents
-  local file = io.open(filepath, "r")
-  local full_content = ""
-  if file then
-    full_content = file:read("*a")
-    file:close()
-  end
-  
   return string.format([[<context>
   <file>%s</file>
   <start_line>%d</start_line>
@@ -184,10 +176,7 @@ local function create_context(filepath, selection, cwd)
   <selection>
 %s
   </selection>
-  <file_content>
-%s
-  </file_content>
-</context>]], display_path, selection.start_line, selection.end_line, selection.text, full_content)
+</context>]], display_path, selection.start_line, selection.end_line, selection.text)
 end
 
 -- Send content to Claude and switch to pane
@@ -386,6 +375,17 @@ function M.setup(opts)
   vim.keymap.set({'n', 'v'}, opts.new_keymap or '<leader>cn', function()
     M.create_and_send()
   end, keymap_opts)
+  
+  -- Set up autocmds for auto-refresh when returning to Neovim
+  local group = vim.api.nvim_create_augroup('ClaudeTmuxNeovim', { clear = true })
+  
+  vim.api.nvim_create_autocmd({'BufEnter', 'FocusGained'}, {
+    group = group,
+    callback = function()
+      -- Check if the file has been modified externally and reload if needed
+      vim.cmd('checktime')
+    end,
+  })
 end
 
 return M
