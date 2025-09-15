@@ -96,23 +96,25 @@ end
 ---@return boolean is_ready
 ---@return string|nil error_msg
 local function is_claude_ready(pane_id)
-  local cmd = string.format('tmux capture-pane -p -t %s -S -10 2>/dev/null', vim.fn.shellescape(pane_id))
+  local cmd = string.format('tmux capture-pane -p -t %s -S -20 2>/dev/null', vim.fn.shellescape(pane_id))
   local content = vim.fn.system(cmd)
-  
+
   if vim.v.shell_error ~= 0 then
     return false, "Claude instance was closed"
   end
-  
-  -- Check for input box boundary (│ character)
-  if not content:match("│") then
+
+  -- Check for Claude prompt pattern: line of dashes followed by ">" on next line
+  local has_claude_prompt = content:match("─+\n>") or content:match("─+\r\n>")
+
+  if not has_claude_prompt then
     return false, nil
   end
-  
+
   -- Check for common blocking prompts
   if content:match("Select") or content:match("Choose") or content:match("Press Enter") then
     return false, "Claude is waiting for your input and cannot receive data"
   end
-  
+
   return true, nil
 end
 
@@ -184,7 +186,7 @@ end
 ---@param content string
 ---@return boolean success
 local function send_to_claude(pane_id, content)
-  -- Load content into tmux buffer
+  -- Create temp file once and reuse for both methods
   local temp_file = os.tmpname()
   local file = io.open(temp_file, "w")
   if not file then
@@ -193,34 +195,46 @@ local function send_to_claude(pane_id, content)
   end
   file:write(content)
   file:close()
-  
-  -- Load buffer and paste
-  local load_cmd = string.format('tmux load-buffer -b claude_temp %s 2>/dev/null', vim.fn.shellescape(temp_file))
-  vim.fn.system(load_cmd)
+
+  local success = false
+
+  -- Method 1: Use send-keys -l to bypass Claude's image paste handler
+  local send_keys_cmd = string.format('tmux send-keys -l -t %s < %s 2>/dev/null',
+                                      vim.fn.shellescape(pane_id), vim.fn.shellescape(temp_file))
+  vim.fn.system(send_keys_cmd)
+
+  if vim.v.shell_error == 0 then
+    success = true
+  else
+    -- Method 2: Fallback to paste-buffer with -p flag
+    local load_cmd = string.format('tmux load-buffer -b claude_temp %s 2>/dev/null', vim.fn.shellescape(temp_file))
+    vim.fn.system(load_cmd)
+
+    if vim.v.shell_error == 0 then
+      local paste_cmd = string.format('tmux paste-buffer -p -b claude_temp -t %s 2>/dev/null', vim.fn.shellescape(pane_id))
+      vim.fn.system(paste_cmd)
+
+      if vim.v.shell_error == 0 then
+        success = true
+      end
+      -- Always clean up the buffer
+      vim.fn.system('tmux delete-buffer -b claude_temp 2>/dev/null')
+    end
+  end
+
+  -- Always clean up temp file
   os.remove(temp_file)
-  
-  if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to load content into tmux buffer", vim.log.levels.ERROR)
+
+  if not success then
+    vim.notify("Failed to send content to Claude", vim.log.levels.ERROR)
     return false
   end
-  
-  -- Paste buffer into Claude pane (with -p to disable bracketed paste)
-  local paste_cmd = string.format('tmux paste-buffer -p -b claude_temp -t %s 2>/dev/null', vim.fn.shellescape(pane_id))
-  vim.fn.system(paste_cmd)
-  
-  if vim.v.shell_error ~= 0 then
-    vim.notify("Failed to paste into Claude", vim.log.levels.ERROR)
-    return false
-  end
-  
-  -- Delete the buffer
-  vim.fn.system('tmux delete-buffer -b claude_temp 2>/dev/null')
-  
+
   -- Switch to Claude pane
-  local switch_cmd = string.format('tmux switch-client -t %s 2>/dev/null || tmux select-pane -t %s 2>/dev/null', 
+  local switch_cmd = string.format('tmux switch-client -t %s 2>/dev/null || tmux select-pane -t %s 2>/dev/null',
                                    vim.fn.shellescape(pane_id), vim.fn.shellescape(pane_id))
   vim.fn.system(switch_cmd)
-  
+
   return true
 end
 

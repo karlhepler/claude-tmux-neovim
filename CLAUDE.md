@@ -95,5 +95,16 @@ Full file contents here...
 - Claude detection uses pattern `(^|[[:space:]])claude([[:space:]]|$)` to match Claude as a standalone word
 - Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
 - Instance picker shows tmux pane IDs for verification
-- Ready check only verifies input box exists (│ character)
+- Ready check verifies Claude prompt exists (line of dashes followed by >)
 - Increased initialization wait from 2s to 3s for better reliability
+
+## Claude Code UI Compatibility
+
+The plugin is compatible with Claude Code's new UI changes:
+
+- **Primary method**: Uses `tmux send-keys -l` to simulate keyboard input, bypassing Claude's image paste handler
+- **Fallback method**: Falls back to `tmux paste-buffer -p` if send-keys fails
+- **Pattern detection**: Detects Claude's new UI by looking for edge-to-edge dashes immediately followed by >
+- **No interference**: Content is safely appended to existing text without triggering paste handlers
+
+This ensures the plugin works reliably with Claude Code's new UI.
