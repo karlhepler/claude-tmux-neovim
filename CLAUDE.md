@@ -11,11 +11,12 @@ License: MIT
 
 ## Architecture
 
-The plugin has been completely rewritten for speed and simplicity:
+The plugin has been completely rewritten for speed, reliability and simplicity:
 
-- **Single file**: All logic in `lua/claude-tmux-neovim/init.lua` (~360 lines)
+- **Single file**: All logic in `lua/claude-tmux-neovim/init.lua` (~440 lines)
 - **Fast detection**: Single shell pipeline finds Claude processes in <50ms
-- **Direct operations**: No wrappers, retries, or complex verification
+- **Robust operations**: Input validation, content size limits, and retry logic
+- **Multiple send methods**: Optimized for different content sizes
 - **Minimal dependencies**: Just Neovim and tmux
 
 ## Core Workflow
@@ -60,9 +61,6 @@ Line 6 content
 Line 7 content
 Line 8 content
   </selection>
-  <file_content>
-Full file contents here...
-  </file_content>
 </context>
 ```
 
@@ -70,8 +68,15 @@ Full file contents here...
 
 - Claude detection: ~20ms
 - Context creation: ~5ms
+- Input validation: ~1ms
 - Tmux operations: ~10ms
 - **Total: <50ms for existing instance**
+
+## Content Limits
+
+- **Maximum content**: 100KB (prevents memory issues)
+- **Small content threshold**: 1KB (uses optimized direct method)
+- **Claude startup timeout**: 30 seconds with retry logic
 
 ## Testing Checklist
 
@@ -96,7 +101,9 @@ Full file contents here...
 - Checks both parent PID and process PID for tmux pane mapping (handles both shell and direct execution)
 - Instance picker shows tmux pane IDs for verification
 - Ready check verifies Claude prompt exists (line of dashes followed by >)
-- Increased initialization wait from 2s to 3s for better reliability
+- Smart retry loop replaces hardcoded sleep for Claude initialization
+- Input validation prevents invalid pane IDs and missing files
+- Content size limits protect against memory issues
 
 ## Claude Code UI Compatibility
 

@@ -80,13 +80,10 @@ Line 6 content
 Line 7 content
 Line 8 content
   </selection>
-  <file_content>
-Full file contents here...
-  </file_content>
 </context>
 ```
 
-The file path is shown relative to Claude's working directory, and the full file contents are included for context.
+The file path is shown relative to Claude's working directory for easy navigation.
 
 ## How It Works
 

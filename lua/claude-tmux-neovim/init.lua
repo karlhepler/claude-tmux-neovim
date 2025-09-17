@@ -1,9 +1,14 @@
 ---@brief Fast Claude-Tmux-Neovim plugin for sending code context to Claude
 local M = {}
 
+-- Configuration constants
+local SMALL_CONTENT_THRESHOLD = 1024  -- Size threshold for choosing send method (1KB)
+local MAX_CONTENT_SIZE = 100 * 1024   -- Maximum content size to prevent memory issues (100KB)
+local CLAUDE_STARTUP_TIMEOUT = 30     -- Maximum seconds to wait for Claude startup
+
 -- Get git root of current file or directory
 ---@param path string File path or directory path
----@return string|nil git_root
+---@return string|nil git_root Returns git root path or nil if not in a git repository
 local function get_git_root(path)
   -- If path is already a directory, use it directly. Otherwise get its parent directory
   local dir = vim.fn.isdirectory(path) == 1 and path or vim.fn.fnamemodify(path, ':h')
@@ -44,9 +49,7 @@ local function find_claude_instances(git_root)
           pane_id = pane_id,
           display = display or pane_id,
         })
-      else
       end
-    else
     end
   end
   
@@ -92,9 +95,10 @@ local function sort_by_closest_parent(instances, filepath)
 end
 
 -- Check if Claude is ready (has input box visible)
----@param pane_id string
----@return boolean is_ready
----@return string|nil error_msg
+-- Captures last 20 lines of pane and checks for Claude prompt pattern
+---@param pane_id string Tmux pane ID to check
+---@return boolean is_ready True if Claude is ready to receive input
+---@return string|nil error_msg Error message if Claude is not ready, nil if no specific error
 local function is_claude_ready(pane_id)
   local cmd = string.format('tmux capture-pane -p -t %s -S -20 2>/dev/null', vim.fn.shellescape(pane_id))
   local content = vim.fn.system(cmd)
@@ -182,10 +186,23 @@ local function create_context(filepath, selection, cwd)
 end
 
 -- Send content to Claude and switch to pane
----@param pane_id string
----@param content string
----@return boolean success
+-- Creates temporary files and uses tmux commands to send content
+---@param pane_id string Tmux pane ID (format: %n)
+---@param content string Content to send (max 100KB)
+---@return boolean success Returns true if content was sent successfully
 local function send_to_claude(pane_id, content)
+  -- Validate pane_id format (should start with %)
+  if not pane_id or not pane_id:match("^%%") then
+    vim.notify("Invalid pane ID format", vim.log.levels.ERROR)
+    return false
+  end
+
+  -- Validate content
+  if not content or content == "" then
+    vim.notify("No content to send", vim.log.levels.WARN)
+    return false
+  end
+
   -- Create temp file once and reuse for multiple methods
   local temp_file = os.tmpname()
   local file = io.open(temp_file, "w")
@@ -197,9 +214,20 @@ local function send_to_claude(pane_id, content)
   file:close()
 
   local success = false
+  local content_size = #content
+
+  -- Check for maximum content size
+  if content_size > MAX_CONTENT_SIZE then
+    vim.notify(string.format("Content too large (%d KB). Maximum is %d KB.",
+                             math.floor(content_size / 1024),
+                             math.floor(MAX_CONTENT_SIZE / 1024)),
+               vim.log.levels.WARN)
+    os.remove(temp_file)
+    return false
+  end
 
   -- Method 1: Try direct send-keys with content as argument for smaller content
-  if #content < 1024 and not content:find('\n') then
+  if content_size < SMALL_CONTENT_THRESHOLD and not content:find('[\r\n]') then
     -- For small single-line content, pass directly as argument
     local escaped_content = vim.fn.shellescape(content)
     local send_keys_cmd = string.format('tmux send-keys -l -t %s %s 2>/dev/null',
@@ -270,9 +298,24 @@ local function create_new_claude(flags, selection)
     return false
   end
   
-  -- Wait for Claude to start and fully initialize
-  vim.fn.system("sleep 3")
-  
+  -- Wait for Claude to start and fully initialize with retry loop
+  local start_time = vim.loop.hrtime() / 1000000  -- Convert to milliseconds
+  local ready = false
+
+  while not ready and (vim.loop.hrtime() / 1000000 - start_time) < (CLAUDE_STARTUP_TIMEOUT * 1000) do
+    vim.fn.system("sleep 0.5")  -- Short sleep between checks
+    local is_ready, _ = is_claude_ready(pane_id)
+    if is_ready then
+      ready = true
+      break
+    end
+  end
+
+  if not ready then
+    vim.notify("Claude instance took too long to initialize", vim.log.levels.WARN)
+    -- Continue anyway, but user should know
+  end
+
   -- Send context
   local xml = create_context(filepath, selection, git_root)
   return send_to_claude(pane_id, xml)
@@ -346,6 +389,12 @@ function M.send_to_existing()
     vim.notify("No file open", vim.log.levels.WARN)
     return
   end
+
+  -- Validate file exists
+  if vim.fn.filereadable(filepath) ~= 1 then
+    vim.notify("File does not exist or is not readable: " .. filepath, vim.log.levels.ERROR)
+    return
+  end
   
   local git_root = get_git_root(filepath)
   if not git_root then
@@ -374,6 +423,12 @@ function M.create_and_send()
   local filepath = vim.fn.expand('%:p')
   if filepath == "" then
     vim.notify("No file open", vim.log.levels.WARN)
+    return
+  end
+
+  -- Validate file exists
+  if vim.fn.filereadable(filepath) ~= 1 then
+    vim.notify("File does not exist or is not readable: " .. filepath, vim.log.levels.ERROR)
     return
   end
   
