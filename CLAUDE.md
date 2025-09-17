@@ -100,11 +100,12 @@ Full file contents here...
 
 ## Claude Code UI Compatibility
 
-The plugin is compatible with Claude Code's new UI changes:
+The plugin is compatible with Claude Code's new UI changes and uses multiple reliable methods for text input:
 
-- **Primary method**: Uses `tmux send-keys -l` to simulate keyboard input, bypassing Claude's image paste handler
-- **Fallback method**: Falls back to `tmux paste-buffer -p` if send-keys fails
+- **Method 1**: For small single-line content (<1KB), uses `tmux send-keys -l` with content as direct argument
+- **Method 2**: For larger or multi-line content, uses `tmux paste-buffer -p` to disable bracketed paste mode
 - **Pattern detection**: Detects Claude's new UI by looking for edge-to-edge dashes immediately followed by >
-- **No interference**: Content is safely appended to existing text without triggering paste handlers
+- **Robust fallback**: If the primary method fails, automatically falls back to paste-buffer approach
+- **Proper escaping**: Content is properly escaped to avoid shell interpretation issues
 
-This ensures the plugin works reliably with Claude Code's new UI.
+This multi-method approach ensures reliable text input to Claude Code across different content types and sizes, avoiding the paste handler conflicts that can occur with large text blocks.

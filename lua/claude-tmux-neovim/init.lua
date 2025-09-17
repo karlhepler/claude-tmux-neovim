@@ -186,7 +186,7 @@ end
 ---@param content string
 ---@return boolean success
 local function send_to_claude(pane_id, content)
-  -- Create temp file once and reuse for both methods
+  -- Create temp file once and reuse for multiple methods
   local temp_file = os.tmpname()
   local file = io.open(temp_file, "w")
   if not file then
@@ -198,15 +198,21 @@ local function send_to_claude(pane_id, content)
 
   local success = false
 
-  -- Method 1: Use send-keys -l to bypass Claude's image paste handler
-  local send_keys_cmd = string.format('tmux send-keys -l -t %s < %s 2>/dev/null',
-                                      vim.fn.shellescape(pane_id), vim.fn.shellescape(temp_file))
-  vim.fn.system(send_keys_cmd)
+  -- Method 1: Try direct send-keys with content as argument for smaller content
+  if #content < 1024 and not content:find('\n') then
+    -- For small single-line content, pass directly as argument
+    local escaped_content = vim.fn.shellescape(content)
+    local send_keys_cmd = string.format('tmux send-keys -l -t %s %s 2>/dev/null',
+                                        vim.fn.shellescape(pane_id), escaped_content)
+    vim.fn.system(send_keys_cmd)
 
-  if vim.v.shell_error == 0 then
-    success = true
-  else
-    -- Method 2: Fallback to paste-buffer with -p flag
+    if vim.v.shell_error == 0 then
+      success = true
+    end
+  end
+
+  -- Method 2: Fallback to paste-buffer with -p flag
+  if not success then
     local load_cmd = string.format('tmux load-buffer -b claude_temp %s 2>/dev/null', vim.fn.shellescape(temp_file))
     vim.fn.system(load_cmd)
 
