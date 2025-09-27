@@ -176,7 +176,7 @@ local function create_context(filepath, selection, cwd)
   end
   
   return string.format([[<context>
-  <file>%s</file>
+  <file>@%s</file>
   <start_line>%d</start_line>
   <end_line>%d</end_line>
   <selection>
