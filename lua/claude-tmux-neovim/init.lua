@@ -2,7 +2,6 @@
 local M = {}
 
 -- Configuration constants
-local SMALL_CONTENT_THRESHOLD = 1024  -- Size threshold for choosing send method (1KB)
 local MAX_CONTENT_SIZE = 100 * 1024   -- Maximum content size to prevent memory issues (100KB)
 local CLAUDE_STARTUP_TIMEOUT = 30     -- Maximum seconds to wait for Claude startup
 
@@ -186,7 +185,7 @@ local function create_context(filepath, selection, cwd)
 end
 
 -- Send content to Claude and switch to pane
--- Creates temporary files and uses tmux commands to send content
+-- Uses tmux send-keys in literal mode to avoid paste event issues
 ---@param pane_id string Tmux pane ID (format: %n)
 ---@param content string Content to send (max 100KB)
 ---@return boolean success Returns true if content was sent successfully
@@ -203,17 +202,6 @@ local function send_to_claude(pane_id, content)
     return false
   end
 
-  -- Create temp file once and reuse for multiple methods
-  local temp_file = os.tmpname()
-  local file = io.open(temp_file, "w")
-  if not file then
-    vim.notify("Failed to create temporary file", vim.log.levels.ERROR)
-    return false
-  end
-  file:write(content)
-  file:close()
-
-  local success = false
   local content_size = #content
 
   -- Check for maximum content size
@@ -222,45 +210,32 @@ local function send_to_claude(pane_id, content)
                              math.floor(content_size / 1024),
                              math.floor(MAX_CONTENT_SIZE / 1024)),
                vim.log.levels.WARN)
-    os.remove(temp_file)
     return false
   end
 
-  -- Method 1: Try direct send-keys with content as argument for smaller content
-  if content_size < SMALL_CONTENT_THRESHOLD and not content:find('[\r\n]') then
-    -- For small single-line content, pass directly as argument
-    local escaped_content = vim.fn.shellescape(content)
+  -- Use send-keys -l (literal mode) for all content to avoid paste event interpretation
+  -- Break into chunks to avoid command-line length limits (use 4KB chunks for safety)
+  local CHUNK_SIZE = 4096
+  local pos = 1
+  local success = true
+
+  while pos <= content_size do
+    local chunk = content:sub(pos, pos + CHUNK_SIZE - 1)
+    local escaped_chunk = vim.fn.shellescape(chunk)
     local send_keys_cmd = string.format('tmux send-keys -l -t %s %s 2>/dev/null',
-                                        vim.fn.shellescape(pane_id), escaped_content)
+                                        vim.fn.shellescape(pane_id), escaped_chunk)
     vim.fn.system(send_keys_cmd)
 
-    if vim.v.shell_error == 0 then
-      success = true
+    if vim.v.shell_error ~= 0 then
+      vim.notify("Failed to send content to Claude", vim.log.levels.ERROR)
+      success = false
+      break
     end
+
+    pos = pos + CHUNK_SIZE
   end
 
-  -- Method 2: Fallback to paste-buffer with -p flag
   if not success then
-    local load_cmd = string.format('tmux load-buffer -b claude_temp %s 2>/dev/null', vim.fn.shellescape(temp_file))
-    vim.fn.system(load_cmd)
-
-    if vim.v.shell_error == 0 then
-      local paste_cmd = string.format('tmux paste-buffer -p -b claude_temp -t %s 2>/dev/null', vim.fn.shellescape(pane_id))
-      vim.fn.system(paste_cmd)
-
-      if vim.v.shell_error == 0 then
-        success = true
-      end
-      -- Always clean up the buffer
-      vim.fn.system('tmux delete-buffer -b claude_temp 2>/dev/null')
-    end
-  end
-
-  -- Always clean up temp file
-  os.remove(temp_file)
-
-  if not success then
-    vim.notify("Failed to send content to Claude", vim.log.levels.ERROR)
     return false
   end
 
